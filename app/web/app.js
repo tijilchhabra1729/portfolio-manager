@@ -581,8 +581,36 @@ function renderAuth(mode = "signin") {
 
 /* --- boot ----------------------------------------------------------------- */
 
+/* Supabase sends you back from a confirmation or recovery email with the session in the
+ * URL *fragment* -- #access_token=...&refresh_token=... -- not the query string. Nothing
+ * reads it unless we do, so without this you click the link in your email, land back on
+ * the app, and are still looking at a login form.
+ *
+ * The fragment is stripped from the address bar immediately afterwards: it holds a live
+ * bearer token, and leaving it there means it survives in history, in a screenshot, and
+ * in anything the user copy-pastes out of the URL bar. */
+function claimTokenFromUrl() {
+  if (!location.hash.includes("access_token")) return false;
+
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  const token = fragment.get("access_token");
+  history.replaceState(null, "", location.pathname + location.search);
+
+  if (!token) {
+    const error = fragment.get("error_description") || fragment.get("error");
+    if (error) console.warn("Supabase redirect returned an error:", error);
+    return false;
+  }
+
+  S.token = token;
+  localStorage.setItem("token", token);
+  return true;
+}
+
 async function boot() {
   S.config = await (await fetch("/api/config")).json();
+  claimTokenFromUrl();
+
   if (S.config.auth_enabled && !S.token) {
     renderAuth();
     return;
