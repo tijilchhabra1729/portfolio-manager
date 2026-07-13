@@ -409,10 +409,30 @@ function showErrors(detail) {
   host.appendChild(list);
 }
 
-function showOk(message) {
+function showOk(message, warnings = []) {
   const host = $("upload-result");
   host.innerHTML = "";
   host.appendChild(el("div", "banner", message));
+  if (!warnings.length) return;
+
+  // The upload worked, but some holdings were reclassified. Say so. A sector allocation
+  // that quietly moved a stock into "Others" is worse than one that refused to.
+  const b = el("div", "banner warn");
+  b.style.marginTop = "10px";
+  b.appendChild(
+    el("div", null, `${warnings.length} holding(s) had a sector we could not place:`)
+  );
+  host.appendChild(b);
+
+  const list = el("ul", "errors");
+  warnings.forEach((w) => {
+    const li = el("li");
+    li.style.borderLeftColor = "var(--warn)";
+    li.appendChild(el("code", null, `${w.sheet} row ${w.row}`));
+    li.appendChild(el("span", null, w.message));
+    list.appendChild(li);
+  });
+  host.appendChild(list);
 }
 
 async function send(path, input, extra) {
@@ -630,11 +650,26 @@ async function boot() {
   $("export").onclick = () => {
     window.location = `/api/${S.market}/export`;
   };
+  // Only a CSV needs the market asked for; the workbook already knows from its sheets.
+  const csvMarket = $("csv-market");
+  $("upload-file").onchange = (e) => {
+    const name = e.target.files[0]?.name || "";
+    csvMarket.hidden = !name.toLowerCase().endsWith(".csv");
+  };
+
   $("upload-go").onclick = async () => {
     const mode = document.querySelector('input[name="mode"]:checked').value;
-    const result = await send("/api/portfolio/upload", $("upload-file"), { mode });
+    const extra = { mode, keep_custom_sectors: $("keep-sectors").checked };
+    if (!csvMarket.hidden) {
+      extra.market = document.querySelector('input[name="market"]:checked').value;
+    }
+    const result = await send("/api/portfolio/upload", $("upload-file"), extra);
     if (result) {
-      showOk(`Loaded ${result.transactions_added} holdings into ${result.markets.join(" and ")}.`);
+      showOk(
+        `Loaded ${result.transactions_added} holdings into ${result.markets.join(" and ")}.`,
+        result.warnings
+      );
+      csvMarket.hidden = true;
       load();
     }
   };

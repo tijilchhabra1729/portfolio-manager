@@ -47,7 +47,7 @@ def test_reads_both_markets_from_their_sheets(sample_bytes):
     reliance = next(r for r in rows if r.ticker == "RELIANCE")
     assert reliance.name == "Reliance Industries"
     assert reliance.units == D("50")
-    assert reliance.sector == "Oil & Gas / Energy"
+    assert reliance.sector == "Energy"
     assert reliance.purchase_date == date(2025, 4, 15)
 
 
@@ -82,21 +82,42 @@ def test_blank_template_parses_to_nothing():
 # --- Rejection ----------------------------------------------------------------------
 
 
-def test_sector_outside_the_taxonomy_is_rejected(sample_bytes):
+def test_sector_outside_the_taxonomy_becomes_others_and_is_reported(sample_bytes):
+    """The taxonomy is closed, but an unknown sector is not worth rejecting a file over.
+    It becomes Others -- and is always reported, never applied silently."""
     broken = mutate(sample_bytes, "India_Holdings", 2, 6, "Crypto")
     rows, report = read_holdings(broken)
-    assert not report.ok
-    error = next(e for e in report.errors if e.column == "Sector")
-    assert error.row == 2
-    assert "Crypto" in error.message
+
+    assert report.ok  # the upload still succeeds
+    assert next(r for r in rows if r.ticker == "RELIANCE").sector == "Others"
+
+    warning = next(w for w in report.warnings if w.column == "Sector")
+    assert warning.row == 2
+    assert "Crypto" in warning.message
+    assert "Others" in warning.message
 
 
-def test_us_sheet_rejects_an_india_sector(sample_bytes):
-    """The taxonomies are per-market: 'Banking' is valid for India, not for the US."""
-    broken = mutate(sample_bytes, "US_Holdings", 2, 6, "Banking")
-    _, report = read_holdings(broken)
-    assert not report.ok
-    assert any(e.column == "Sector" for e in report.errors)
+def test_an_unknown_sector_can_be_kept_under_its_own_name(sample_bytes):
+    broken = mutate(sample_bytes, "India_Holdings", 2, 6, "Renewable Energy")
+    rows, report = read_holdings(broken, keep_custom_sectors=True)
+
+    assert report.ok
+    assert next(r for r in rows if r.ticker == "RELIANCE").sector == "Renewable Energy"
+    assert any("kept as your own" in w.message for w in report.warnings)
+
+
+def test_sectors_are_resolved_per_market(sample_bytes):
+    """'Banking' means Financial services in India and Financials in the US -- the same
+    idea, spelled for two different taxonomies."""
+    india = mutate(sample_bytes, "India_Holdings", 2, 6, "Banking")
+    rows, report = read_holdings(india)
+    assert report.ok
+    assert next(r for r in rows if r.ticker == "RELIANCE").sector == "Financial services"
+
+    us = mutate(sample_bytes, "US_Holdings", 2, 6, "Banking")
+    rows, report = read_holdings(us)
+    assert report.ok
+    assert next(r for r in rows if r.ticker == "AAPL").sector == "Financials"
 
 
 def test_negative_units_rejected(sample_bytes):
@@ -127,9 +148,11 @@ def test_missing_required_cell_rejected(sample_bytes):
 def test_every_bad_row_is_reported_not_just_the_first(sample_bytes):
     """One upload, one complete list of problems -- so the user fixes the spreadsheet in
     a single pass instead of ten."""
-    broken = mutate(sample_bytes, "India_Holdings", 2, 6, "Crypto")  # RELIANCE
-    broken = mutate(broken, "India_Holdings", 3, 3, -5)  # HDFCBANK
-    broken = mutate(broken, "India_Holdings", 4, 5, "garbage")  # INFY
+    # Three genuine errors. A bad *sector* is no longer one of them -- that is a warning
+    # now, and the row survives as "Others".
+    broken = mutate(sample_bytes, "India_Holdings", 2, 2, "!!bad!!")  # RELIANCE: ticker
+    broken = mutate(broken, "India_Holdings", 3, 3, -5)  # HDFCBANK: units
+    broken = mutate(broken, "India_Holdings", 4, 5, "garbage")  # INFY: date
     rows, report = read_holdings(broken)
 
     assert {e.row for e in report.errors} == {2, 3, 4}
@@ -146,9 +169,23 @@ def test_every_bad_row_is_reported_not_just_the_first(sample_bytes):
 
 
 def test_missing_column_is_a_file_level_error(sample_bytes):
-    broken = mutate(sample_bytes, "India_Holdings", 1, 3, "Qty")  # renamed 'Units'
+    # "Notes", not "Qty" -- Qty is a recognised alias for Units (brokers use it), so it
+    # would resolve rather than go missing.
+    broken = mutate(sample_bytes, "India_Holdings", 1, 3, "Notes")  # was 'Units'
     _, report = read_holdings(broken)
     assert any(e.row == 1 and "Missing required column" in e.message for e in report.errors)
+
+
+def test_broker_headers_are_accepted_in_the_xlsx_too(sample_bytes):
+    """Aliasing is a property of the reader, not of the CSV path -- a workbook whose
+    columns were pasted from a broker export works just as well."""
+    broker = mutate(sample_bytes, "India_Holdings", 1, 2, "Symbol")
+    broker = mutate(broker, "India_Holdings", 1, 3, "Quantity Available")
+    broker = mutate(broker, "India_Holdings", 1, 4, "Average Price")
+
+    rows, report = read_holdings(broker)
+    assert report.ok, report.as_dicts()
+    assert next(r for r in rows if r.ticker == "RELIANCE").units == D("50")
 
 
 def test_dates_accepted_in_several_formats(sample_bytes):

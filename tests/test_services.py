@@ -110,15 +110,15 @@ def test_bulk_upload_replaces_within_a_market(conn, sample_workbook):
 
 
 def test_broken_file_writes_nothing(conn, sample_workbook):
-    """Validate-then-commit: one bad sector rejects the whole upload."""
-    broken = edit(sample_workbook, "India_Holdings", 2, 6, "Crypto")
+    """Validate-then-commit: one bad cell rejects the whole upload."""
+    broken = edit(sample_workbook, "India_Holdings", 2, 3, -5)  # negative units
     result = portfolio_service.upload(conn, USER, broken, UploadMode.REPLACE)
 
     assert not result.ok
-    assert any(e["column"] == "Sector" for e in result.errors)
+    assert any(e["column"] == "Units" for e in result.errors)
 
     view = dashboard_service.build(conn, USER, Market.INDIA)
-    assert view.totals.stock_count == 0  # the four *valid* rows did not sneak in
+    assert view.totals.stock_count == 0  # the other *valid* rows did not sneak in
 
 
 # --- Delete -------------------------------------------------------------------------
@@ -210,7 +210,7 @@ def test_dashboard_computes_the_doc_tables(conn, sample_workbook, priced):
 
     sectors = {s.sector for s in view.sectors}
     assert sectors == {
-        "Oil & Gas / Energy", "Banking", "IT", "Auto", "Pharma & Healthcare", "FMCG",
+        "Energy", "Financial services", "IT", "Automobile", "Healthcare", "FMCG",
     }
 
 
@@ -291,11 +291,11 @@ def test_snapshot_records_history_for_the_agent_layer(conn, sample_workbook, pri
     # Sector allocations are stored so an agent can ask about drift without replaying
     # the whole ledger.
     assert set(row["sector_allocations"]) == {
-        "Oil & Gas / Energy",
-        "Banking",
+        "Energy",
+        "Financial services",
         "IT",
-        "Auto",
-        "Pharma & Healthcare",
+        "Automobile",
+        "Healthcare",
         "FMCG",
     }
 

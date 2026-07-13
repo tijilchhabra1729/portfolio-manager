@@ -36,6 +36,9 @@ class UploadResult:
     transactions_added: int = 0
     markets: list[str] = field(default_factory=list)
     errors: list[dict] = field(default_factory=list)
+    # Sectors we could not place. The upload succeeded, but not silently -- the caller
+    # shows these so a holding is never quietly reclassified.
+    warnings: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -51,8 +54,21 @@ def upload(
     content: bytes,
     mode: UploadMode,
     filename: str = "upload.xlsx",
+    market: Market | None = None,
+    keep_custom_sectors: bool = False,
 ) -> UploadResult:
-    rows, report = read_holdings(content)
+    """`market` applies to CSV uploads only. Our workbook decides the market per row from
+    the sheet it sits on; a flat broker CSV has no such signal, so the upload form says.
+
+    `keep_custom_sectors` keeps an unrecognised sector under its own name rather than
+    filing it under "Others".
+    """
+    rows, report = read_holdings(
+        content,
+        filename=filename,
+        market=market,
+        keep_custom_sectors=keep_custom_sectors,
+    )
     if not report.ok:
         return UploadResult(ok=False, errors=report.as_dicts())
     if not rows:
@@ -102,6 +118,7 @@ def upload(
         mode=mode,
         transactions_added=added,
         markets=sorted(m.value for m in by_market),
+        warnings=report.warnings_as_dicts(),
     )
 
 

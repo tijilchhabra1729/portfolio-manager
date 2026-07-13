@@ -1,8 +1,13 @@
 """Market definitions and their sector taxonomies.
 
-Sectors are a closed vocabulary per market: the intake spreadsheet offers them as a
-dropdown and the validator rejects anything else. That keeps sector allocation
-deterministic rather than at the mercy of whatever a data provider happens to report.
+The India list is Zerodha's (https://zerodha.com/markets/sector/), verbatim. Matching a
+broker's own vocabulary means their export usually lands without an edit -- and it means
+"Financial services" covers banks, because that is how Zerodha files them.
+
+The taxonomy is CLOSED. Anything unrecognised becomes "Others" and is reported, never
+invented. A free-form sector list quietly destroys the only number this product exists to
+compute: upload "Bankng" once and you get "Financial services 12%" and "Bankng 8%" as two
+separate industries, with nothing anywhere telling you they are the same thing.
 """
 
 from __future__ import annotations
@@ -10,41 +15,57 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+# The bucket for anything we cannot place. Reported on upload -- never applied silently.
+UNCLASSIFIED = "Others"
+
 
 class Market(str, Enum):
     INDIA = "INDIA"
     US = "US"
 
 
-# NSE-oriented grouping. Banking and Financial Services are kept apart because a
-# portfolio can be badly concentrated in banks while looking balanced under a single
-# merged "Financials" bucket.
+# Zerodha's sector list, exactly as they publish it, plus our fallback bucket. Note there
+# is no "Banking": banks sit under Financial services, and NBFC is broken out separately.
 INDIA_SECTORS: tuple[str, ...] = (
-    "Auto",
-    "Banking",
-    "Financial Services",
-    "IT",
-    "Pharma & Healthcare",
-    "FMCG",
-    "Metals & Mining",
-    "Oil & Gas / Energy",
+    "Agriculture",
+    "Auto ancillary",
+    "Automobile",
+    "Aviation",
+    "Building materials",
     "Chemicals",
-    "Cement & Construction",
-    "Capital Goods / Industrials",
-    "Power & Utilities",
-    "Telecom",
-    "Realty",
-    "Media & Entertainment",
-    "Consumer Durables",
-    "Infrastructure",
-    "Textiles",
-    "Agri",
+    "Consumer durables",
+    "Dairy products",
     "Defence",
     "Diversified",
-    "Other",
+    "Education & training",
+    "Energy",
+    "Engineering & capital goods",
+    "FMCG",
+    "Fertilizers",
+    "Financial services",
+    "Healthcare",
+    "IT",
+    "Logistics",
+    "Media & entertainment",
+    "Metals",
+    "Miscellaneous",
+    "NBFC",
+    "Packaging",
+    "Plastic pipes",
+    "Real estate",
+    "Retail",
+    "Services",
+    "Silver",
+    "Software services",
+    "Solar panel",
+    "Telecom",
+    "Textiles",
+    "Tourism & hospitality",
+    "Trading",
+    UNCLASSIFIED,
 )
 
-# The 11 GICS sectors, plus a catch-all for ETFs and anything unclassifiable.
+# The 11 GICS sectors, plus the same fallback.
 US_SECTORS: tuple[str, ...] = (
     "Information Technology",
     "Health Care",
@@ -57,8 +78,95 @@ US_SECTORS: tuple[str, ...] = (
     "Utilities",
     "Real Estate",
     "Materials",
-    "Other",
+    UNCLASSIFIED,
 )
+
+# Brokers and data vendors do not all use the same words. Aliases are matched after
+# lowercasing and stripping punctuation, so "Oil & Gas", "oil and gas" and "OIL/GAS" all
+# resolve identically. Per-market, because "Financial services" and "Financials" are the
+# same idea spelled for different taxonomies.
+INDIA_ALIASES: dict[str, str] = {
+    "bank": "Financial services",
+    "banks": "Financial services",
+    "banking": "Financial services",
+    "private sector bank": "Financial services",
+    "public sector bank": "Financial services",
+    "psu bank": "Financial services",
+    "finance": "Financial services",
+    "financials": "Financial services",
+    "insurance": "Financial services",
+    "capital markets": "Financial services",
+    "non banking financial company": "NBFC",
+    "information technology": "IT",
+    "it services": "IT",
+    "tech": "IT",
+    "technology": "IT",
+    "software": "Software services",
+    "pharma": "Healthcare",
+    "pharmaceutical": "Healthcare",
+    "pharmaceuticals": "Healthcare",
+    "health care": "Healthcare",
+    "hospital": "Healthcare",
+    "hospitals": "Healthcare",
+    "auto": "Automobile",
+    "automobiles": "Automobile",
+    "auto ancillaries": "Auto ancillary",
+    "auto components": "Auto ancillary",
+    "oil and gas": "Energy",
+    "oil gas": "Energy",
+    "petroleum": "Energy",
+    "refineries": "Energy",
+    "power": "Energy",
+    "utilities": "Energy",
+    "electricity": "Energy",
+    "coal": "Energy",
+    "mining": "Metals",
+    "steel": "Metals",
+    "metals and mining": "Metals",
+    "cement": "Building materials",
+    "construction": "Building materials",
+    "infrastructure": "Building materials",
+    "realty": "Real estate",
+    "capital goods": "Engineering & capital goods",
+    "industrials": "Engineering & capital goods",
+    "engineering": "Engineering & capital goods",
+    "telecommunication": "Telecom",
+    "telecommunications": "Telecom",
+    "media": "Media & entertainment",
+    "entertainment": "Media & entertainment",
+    "consumer goods": "FMCG",
+    "fast moving consumer goods": "FMCG",
+    "agri": "Agriculture",
+    "agro": "Agriculture",
+    "defense": "Defence",
+    "conglomerate": "Diversified",
+    "airlines": "Aviation",
+    "hotels": "Tourism & hospitality",
+    "hospitality": "Tourism & hospitality",
+    "shipping": "Logistics",
+    "misc": "Miscellaneous",
+    "other": UNCLASSIFIED,
+}
+
+US_ALIASES: dict[str, str] = {
+    "technology": "Information Technology",
+    "tech": "Information Technology",
+    "it": "Information Technology",
+    "software": "Information Technology",
+    "healthcare": "Health Care",
+    "financial services": "Financials",
+    "finance": "Financials",
+    "banking": "Financials",
+    "banks": "Financials",
+    "consumer cyclical": "Consumer Discretionary",
+    "consumer defensive": "Consumer Staples",
+    "communications": "Communication Services",
+    "telecom": "Communication Services",
+    "basic materials": "Materials",
+    "realty": "Real Estate",
+    "oil and gas": "Energy",
+    "other": UNCLASSIFIED,
+}
 
 
 @dataclass(frozen=True)
@@ -69,6 +177,7 @@ class MarketSpec:
     symbol: str
     yf_suffix: str
     sectors: tuple[str, ...]
+    aliases: dict[str, str]
 
 
 MARKETS: dict[Market, MarketSpec] = {
@@ -79,6 +188,7 @@ MARKETS: dict[Market, MarketSpec] = {
         symbol="₹",
         yf_suffix=".NS",
         sectors=INDIA_SECTORS,
+        aliases=INDIA_ALIASES,
     ),
     Market.US: MarketSpec(
         code=Market.US,
@@ -87,12 +197,44 @@ MARKETS: dict[Market, MarketSpec] = {
         symbol="$",
         yf_suffix="",
         sectors=US_SECTORS,
+        aliases=US_ALIASES,
     ),
 }
 
 
 def spec(market: Market) -> MarketSpec:
     return MARKETS[market]
+
+
+def _normalise(value: str) -> str:
+    cleaned = "".join(c if c.isalnum() or c.isspace() else " " for c in value.lower())
+    return " ".join(cleaned.split())
+
+
+def resolve_sector(market: Market, raw: str) -> str | None:
+    """Map whatever the file says onto this market's taxonomy, or None if we can't.
+
+    Exact match first, then an alias. We never guess beyond that: the caller decides what
+    an unrecognised sector becomes, and says so out loud.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None
+    market_spec = MARKETS[market]
+
+    normalised = _normalise(raw)
+    for sector in market_spec.sectors:
+        if _normalise(sector) == normalised:
+            return sector
+
+    alias = market_spec.aliases.get(normalised)
+    return alias if alias in market_spec.sectors else None
+
+
+def suggest_sectors(market: Market, raw: str, limit: int = 3) -> list[str]:
+    from difflib import get_close_matches
+
+    return get_close_matches(raw, MARKETS[market].sectors, n=limit, cutoff=0.5)
 
 
 def is_valid_sector(market: Market, sector: str) -> bool:

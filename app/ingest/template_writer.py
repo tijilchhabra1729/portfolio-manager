@@ -35,11 +35,11 @@ HEADER_FONT = Font(bold=True, color="FFFFFF")
 # TATAMOTORS, which Yahoo now 404s: Tata Motors demerged in 2025 and the passenger-
 # vehicle entity trades as TMPV. Worth knowing that a ticker can simply stop existing.)
 SAMPLE_INDIA = [
-    ("Reliance Industries", "RELIANCE", 50, 1180.00, "2025-04-15", "Oil & Gas / Energy"),
-    ("HDFC Bank", "HDFCBANK", 100, 890.50, "2025-05-20", "Banking"),
+    ("Reliance Industries", "RELIANCE", 50, 1180.00, "2025-04-15", "Energy"),
+    ("HDFC Bank", "HDFCBANK", 100, 890.50, "2025-05-20", "Financial services"),
     ("Infosys", "INFY", 75, 1210.00, "2025-06-10", "IT"),
-    ("Maruti Suzuki", "MARUTI", 8, 11800.00, "2025-03-05", "Auto"),
-    ("Sun Pharmaceutical", "SUNPHARMA", 60, 1650.00, "2025-02-11", "Pharma & Healthcare"),
+    ("Maruti Suzuki", "MARUTI", 8, 11800.00, "2025-03-05", "Automobile"),
+    ("Sun Pharmaceutical", "SUNPHARMA", 60, 1650.00, "2025-02-11", "Healthcare"),
     ("ITC", "ITC", 400, 305.00, "2025-01-18", "FMCG"),
 ]
 

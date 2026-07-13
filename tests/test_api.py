@@ -53,7 +53,7 @@ def test_health_and_markets(client):
     assert {m["code"] for m in markets} == {"INDIA", "US"}
     india = next(m for m in markets if m["code"] == "INDIA")
     assert india["currency"] == "INR"
-    assert "Banking" in india["sectors"]
+    assert "Financial services" in india["sectors"]  # Zerodha files banks here
 
 
 def test_index_serves_the_dashboard(client):
@@ -107,16 +107,49 @@ def test_allocation_sums_to_one_hundred(client, sample_workbook):
 def test_bad_upload_returns_row_level_errors_and_saves_nothing(client, sample_workbook):
     from tests.test_services import edit
 
-    broken = edit(sample_workbook, "India_Holdings", 2, 6, "Crypto")
+    broken = edit(sample_workbook, "India_Holdings", 2, 3, -5)  # negative units
     res = upload(client, broken)
     assert res.status_code == 422
 
     errors = res.json()["detail"]["errors"]
     assert errors[0]["row"] == 2
-    assert errors[0]["column"] == "Sector"
+    assert errors[0]["column"] == "Units"
 
     view = client.get("/api/INDIA/dashboard").json()
     assert view["totals"]["stock_count"] == 0
+
+
+def test_an_unknown_sector_is_reported_as_a_warning_not_an_error(client, sample_workbook):
+    """The upload succeeds and the holding lands under Others -- but the response says so,
+    so the reclassification is never silent."""
+    from tests.test_services import edit
+
+    broken = edit(sample_workbook, "India_Holdings", 2, 6, "Crypto Mining")
+    res = upload(client, broken)
+    assert res.status_code == 200
+
+    warnings = res.json()["warnings"]
+    assert any("Crypto Mining" in w["message"] and "Others" in w["message"] for w in warnings)
+
+    view = client.get("/api/INDIA/dashboard").json()
+    reliance = next(s for s in view["stocks"] if s["ticker"] == "RELIANCE")
+    assert reliance["sector"] == "Others"
+
+
+def test_you_can_keep_your_own_sector_name(client, sample_workbook):
+    from tests.test_services import edit
+
+    custom = edit(sample_workbook, "India_Holdings", 2, 6, "Renewable Energy")
+    res = client.post(
+        "/api/portfolio/upload",
+        files={"file": ("s.xlsx", custom, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"mode": "replace", "keep_custom_sectors": "true"},
+    )
+    assert res.status_code == 200
+
+    view = client.get("/api/INDIA/dashboard").json()
+    reliance = next(s for s in view["stocks"] if s["ticker"] == "RELIANCE")
+    assert reliance["sector"] == "Renewable Energy"
 
 
 def test_non_xlsx_is_rejected(client):
@@ -224,4 +257,4 @@ def test_refresh_writes_history_for_the_agent_layer(client, sample_workbook):
     history = client.get("/api/INDIA/history").json()
     assert len(history) == 1
     assert Decimal(history[0]["invested"]) > 0
-    assert "Banking" in history[0]["sector_allocations"]
+    assert "Financial services" in history[0]["sector_allocations"]
