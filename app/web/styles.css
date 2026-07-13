@@ -1,0 +1,205 @@
+/* Palette roles. Light and dark are each selected against their own surface, not an
+   automatic flip. Gain/loss marks use the diverging blue<->red pair rather than the
+   conventional green/red: under deuteranopia green/red measures dE 6.8 -- effectively
+   one colour -- and profit/loss is the last thing a reader should have to guess at. */
+:root {
+  --surface-1: #fcfcfb;
+  --plane: #f9f9f7;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --hairline: rgba(11, 11, 11, 0.1);
+
+  --gain: #2a78d6;   /* diverging pole, marks */
+  --loss: #e34948;
+  --neutral: #f0efec; /* diverging midpoint */
+
+  --gain-text: #006300; /* sanctioned delta tokens; always paired with a +/- sign */
+  --loss-text: #c0392b;
+
+  --seq-100: #cde2fb;
+  --seq-250: #86b6ef;
+  --seq-350: #5598e7;
+  --seq-450: #2a78d6;
+  --seq-550: #1c5cab;
+  --seq-650: #104281;
+
+  --warn: #fab219;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1: #1a1a19;
+    --plane: #0d0d0d;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --hairline: rgba(255, 255, 255, 0.1);
+
+    --gain: #3987e5;
+    --loss: #e66767;
+    --neutral: #383835;
+
+    --gain-text: #0ca30c;
+    --loss-text: #e66767;
+
+    --seq-100: #184f95;
+    --seq-250: #256abf;
+    --seq-350: #2a78d6;
+    --seq-450: #3987e5;
+    --seq-550: #5598e7;
+    --seq-650: #86b6ef;
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--plane);
+  color: var(--ink);
+  font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  padding: 24px;
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 20px; }
+
+/* --- header ---------------------------------------------------------------- */
+
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+h1 { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+h1 span { color: var(--muted); font-weight: 400; }
+
+.spacer { flex: 1; }
+
+.toggle { display: flex; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 3px; }
+.toggle button {
+  border: 0; background: none; color: var(--ink-2); cursor: pointer;
+  padding: 7px 16px; border-radius: 7px; font: inherit; font-weight: 550;
+}
+.toggle button[aria-pressed="true"] { background: var(--seq-450); color: #fff; }
+
+button.action {
+  border: 1px solid var(--hairline); background: var(--surface-1); color: var(--ink);
+  padding: 9px 16px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 550;
+}
+button.action:hover { background: var(--grid); }
+button.action:disabled { opacity: 0.5; cursor: progress; }
+
+/* --- cards ----------------------------------------------------------------- */
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.card > h2 {
+  font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted); margin-bottom: 14px;
+}
+
+/* --- KPI row: stat tiles, not a bar chart ---------------------------------- */
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.kpi .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.kpi .value { font-size: 27px; font-weight: 600; letter-spacing: -0.02em; margin-top: 6px; }
+.kpi .sub { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+
+.gain { color: var(--gain-text); }
+.loss { color: var(--loss-text); }
+
+/* --- charts ---------------------------------------------------------------- */
+
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+
+svg { display: block; width: 100%; overflow: visible; }
+.bar { transition: opacity 0.12s; }
+.bar:hover { opacity: 0.82; }
+.tick { fill: var(--muted); font-size: 12px; }
+.val { fill: var(--ink-2); font-size: 12px; font-weight: 550; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+/* The zero line is the reference the whole diverging chart is read against, so it gets
+   the ink colour rather than the recessive axis grey. */
+.zeroline { stroke: var(--muted); stroke-width: 1; }
+
+.legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin-bottom: 12px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; }
+
+/* --- tables ---------------------------------------------------------------- */
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th {
+  text-align: right; font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted); padding: 8px 12px;
+  border-bottom: 1px solid var(--axis); white-space: nowrap;
+}
+th:nth-child(-n + 3), td:nth-child(-n + 3) { text-align: left; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+tbody tr:hover { background: var(--plane); }
+tbody tr:last-child td { border-bottom: 0; }
+.ticker { font-weight: 600; }
+.dim { color: var(--muted); }
+
+/* Allocation gets an inline meter: the number and the bar say the same thing, so the
+   eye can rank rows without reading every figure. */
+.meter { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.meter .track { width: 54px; height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
+.meter .fill { height: 100%; border-radius: 3px; background: var(--seq-450); }
+
+.chip {
+  font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 20px;
+  background: var(--grid); color: var(--ink-2);
+}
+
+/* --- banners & panels ------------------------------------------------------ */
+
+.banner {
+  display: flex; gap: 10px; align-items: flex-start;
+  border-radius: var(--radius); padding: 12px 16px; font-size: 14px;
+  border: 1px solid var(--hairline); background: var(--surface-1);
+}
+.banner.warn { border-left: 3px solid var(--warn); }
+.banner.bad { border-left: 3px solid var(--loss); }
+
+.empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+
+a { color: var(--seq-450); text-decoration: none; font-weight: 550; }
+a:hover { text-decoration: underline; }
+
+.controls { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-end; }
+.field { display: grid; gap: 7px; min-width: 210px; }
+.field > label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+input[type="file"] {
+  font: inherit; font-size: 13px; color: var(--ink-2);
+  border: 1px dashed var(--axis); border-radius: 8px; padding: 8px; background: var(--plane);
+  max-width: 100%;
+}
+input[type="file"]::file-selector-button {
+  font: inherit; font-size: 12px; font-weight: 600; margin-right: 10px; cursor: pointer;
+  border: 1px solid var(--hairline); border-radius: 6px; padding: 5px 10px;
+  background: var(--surface-1); color: var(--ink);
+}
+.radio { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.radio label { display: flex; gap: 5px; align-items: center; font-weight: 400; cursor: pointer; }
+.links { display: grid; gap: 4px; font-size: 13px; }
+
+.errors { margin-top: 14px; font-size: 13px; }
+.errors li { list-style: none; padding: 7px 10px; border-left: 3px solid var(--loss); background: var(--plane); margin-bottom: 5px; border-radius: 0 6px 6px 0; }
+.errors code { color: var(--muted); margin-right: 8px; }
+
+.tip {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.1s;
+  background: var(--ink); color: var(--surface-1); font-size: 12px; font-weight: 500;
+  padding: 7px 10px; border-radius: 7px; white-space: nowrap; z-index: 10;
+}
+.tip.on { opacity: 1; }
+
+footer { color: var(--muted); font-size: 12px; text-align: center; padding: 8px 0 20px; }

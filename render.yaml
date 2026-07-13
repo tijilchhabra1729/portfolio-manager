@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: portfolio-manager
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      # Supabase -> Settings -> Database -> Connection pooling. Use the POOLER host
+      # (aws-0-<region>.pooler.supabase.com), NOT the direct db.<ref>.supabase.co one:
+      # Supabase serves the direct connection over IPv6 only, and Render has no IPv6
+      # egress, so the direct URI works from a laptop and then times out in production.
+      # Session mode (5432) is preferred for a long-lived container; transaction mode
+      # (6543) also works and app/store/db.py adapts to it automatically.
+      # Change the scheme to postgresql+psycopg:// -- Supabase hands you postgresql://.
+      - key: DATABASE_URL
+        sync: false
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      # Project Settings -> API -> JWT Secret. This verifies the token; it is not the
+      # anon key and must never reach the browser.
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      # Any long random string. The GitHub Actions cron presents it to POST /api/refresh.
+      - key: REFRESH_TOKEN
+        sync: false
+      - key: PRICE_CACHE_TTL_MINUTES
+        value: "15"

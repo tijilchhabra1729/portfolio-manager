@@ -1,0 +1,49 @@
+name: Daily refresh
+
+# The doc's "product should refresh itself daily". Render's own cron is a paid feature,
+# so a scheduled workflow calling the endpoint does the job for free.
+#
+# It is also the keep-alive: Supabase pauses a free project after 7 days of inactivity,
+# and this hitting the database every day is what stops that happening. If you ever
+# disable this workflow, the database will eventually go to sleep on you.
+
+on:
+  schedule:
+    # 02:30 UTC = 08:00 IST, after the NSE close and before the US open.
+    - cron: "30 2 * * *"
+  workflow_dispatch: # so you can trigger it by hand from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the service and refresh prices
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # The free tier sleeps after ~15 minutes idle and takes up to a minute to wake,
+          # so the first call is a health check with a generous budget rather than the
+          # real request -- otherwise the refresh would time out against a cold start.
+          echo "Waking $APP_URL ..."
+          curl -sS --fail --retry 5 --retry-all-errors --retry-delay 15 \
+               --max-time 120 "$APP_URL/healthz" > /dev/null
+          echo "Awake."
+
+          curl -sS --fail --max-time 300 \
+               -X POST "$APP_URL/api/refresh" \
+               -H "Authorization: Bearer $REFRESH_TOKEN" | tee response.json
+
+          # A snapshot with every holding unpriced means the run "succeeded" while
+          # recording nothing useful. Fail loudly rather than bank a hollow day.
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("response.json"))
+          for snap in data["snapshots"]:
+              print(f"{snap['market']}: {snap['stocks']} holdings, unpriced={snap['unpriced']}")
+          live = [s for s in data["snapshots"] if s["stocks"]]
+          if live and all(len(s["unpriced"]) == s["stocks"] for s in live):
+              sys.exit("Every holding failed to price — check the market data provider.")
+          PY

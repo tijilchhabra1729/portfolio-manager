@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio Manager</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Portfolio <span id="market-label">—</span></h1>
+      <div class="spacer"></div>
+      <div class="toggle" id="market-toggle" role="group" aria-label="Market"></div>
+      <button class="action" id="refresh">Refresh prices</button>
+      <button class="action" id="export">Export .xlsx</button>
+    </header>
+
+    <div id="notices"></div>
+
+    <section class="kpis" id="kpis"></section>
+
+    <section class="charts">
+      <div class="card">
+        <h2>Sector allocation</h2>
+        <p class="empty" style="margin:-8px 0 12px">Share of invested amount — cost basis, not market value.</p>
+        <div id="chart-allocation"></div>
+      </div>
+      <div class="card">
+        <h2>Profit / loss by sector</h2>
+        <div class="legend">
+          <span><i style="background:var(--gain)"></i>Gain</span>
+          <span><i style="background:var(--loss)"></i>Loss</span>
+        </div>
+        <div id="chart-pnl"></div>
+      </div>
+    </section>
+
+    <!-- The agent layer's landing spot. Renders empty until an agent writes a row. -->
+    <section class="card">
+      <h2>Insights</h2>
+      <div id="insights"></div>
+    </section>
+
+    <section class="card">
+      <h2>Stock allocation</h2>
+      <div class="scroll"><table id="stocks"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>Sector allocation</h2>
+      <div class="scroll"><table id="sectors"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>Manage holdings</h2>
+      <div class="controls">
+        <div class="field">
+          <label for="upload-file">Upload holdings</label>
+          <input type="file" id="upload-file" accept=".xlsx">
+          <div class="radio">
+            <label><input type="radio" name="mode" value="append" checked> Add to portfolio</label>
+            <label><input type="radio" name="mode" value="replace"> Replace portfolio</label>
+          </div>
+        </div>
+        <button class="action" id="upload-go">Upload</button>
+
+        <div class="field">
+          <label for="delete-file">Remove holdings</label>
+          <input type="file" id="delete-file" accept=".xlsx">
+        </div>
+        <button class="action" id="delete-go">Remove</button>
+
+        <div class="spacer"></div>
+        <div class="field">
+          <label>Start here</label>
+          <div class="links">
+            <a href="/api/portfolio/template?kind=blank">Download blank template ↓</a>
+            <a href="/api/portfolio/template?kind=sample">Download filled sample ↓</a>
+          </div>
+        </div>
+      </div>
+      <div id="upload-result"></div>
+    </section>
+
+    <footer id="stamp"></footer>
+  </div>
+
+  <div class="tip" id="tip"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+data/templates/*.xlsx
+data/exports/
+*.egg-info/
+.DS_Store
+.claude/
