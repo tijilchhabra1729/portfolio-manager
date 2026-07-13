@@ -10,10 +10,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.api.main import app
+from app.config import settings
 from app.market.cache import PriceService
 from app.services import dashboard_service
 from app.store.db import connect
 from tests.conftest import TABLES, FakeProvider
+
+# Read the token the app is actually configured with, rather than hardcoding the
+# placeholder from .env.example. Anyone who generates a real REFRESH_TOKEN -- which is
+# exactly what deploying tells you to do -- would otherwise watch these tests start
+# failing with a 401 for no visible reason.
+CRON = {"Authorization": f"Bearer {settings().refresh_token}"}
 
 PRICES = {
     "RELIANCE": "1300", "HDFCBANK": "820", "INFY": "1100",
@@ -178,7 +185,7 @@ def test_refresh_endpoint_requires_the_token(client, sample_workbook):
     assert client.post("/api/refresh", headers={"Authorization": "Bearer wrong"}).status_code == 401
 
     upload(client, sample_workbook)
-    res = client.post("/api/refresh", headers={"Authorization": "Bearer dev-refresh-token"})
+    res = client.post("/api/refresh", headers=CRON)
     assert res.status_code == 200
     assert {s["market"] for s in res.json()["snapshots"]} == {"INDIA", "US"}
 
@@ -196,7 +203,7 @@ def test_refresh_snapshots_whoever_actually_holds_stock(client, sample_workbook)
     with connect() as conn:
         portfolio_service.upload(conn, supabase_uuid, sample_workbook, UploadMode.REPLACE)
 
-    res = client.post("/api/refresh", headers={"Authorization": "Bearer dev-refresh-token"})
+    res = client.post("/api/refresh", headers=CRON)
     snapshots = res.json()["snapshots"]
 
     assert {s["user"] for s in snapshots} == {supabase_uuid}
@@ -205,14 +212,14 @@ def test_refresh_snapshots_whoever_actually_holds_stock(client, sample_workbook)
 
 
 def test_refresh_writes_nothing_when_no_one_holds_anything(client):
-    res = client.post("/api/refresh", headers={"Authorization": "Bearer dev-refresh-token"})
+    res = client.post("/api/refresh", headers=CRON)
     assert res.status_code == 200
     assert res.json()["snapshots"] == []
 
 
 def test_refresh_writes_history_for_the_agent_layer(client, sample_workbook):
     upload(client, sample_workbook)
-    client.post("/api/refresh", headers={"Authorization": "Bearer dev-refresh-token"})
+    client.post("/api/refresh", headers=CRON)
 
     history = client.get("/api/INDIA/history").json()
     assert len(history) == 1

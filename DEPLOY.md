@@ -15,15 +15,22 @@ cd ~/Desktop/portfolio-manager
 git init
 git add -A
 
-# Confirm no secrets are staged. Both of these must print NOTHING.
-git diff --cached --name-only | grep -x ".env"
-git diff --cached -U0 | grep -iE "eyJ[A-Za-z0-9]{10,}|service_role"
+# Is .env tracked? Must print nothing.
+git ls-files --cached | grep -x ".env"
+
+# Any real credential staged? Supabase keys are JWTs and always start with "eyJ".
+# Must print nothing.
+git grep --cached -nE "eyJ[A-Za-z0-9_-]{20,}"
 
 git commit -m "Portfolio dashboard: Excel intake, India + US, live prices"
 ```
 
-`.env` and `.venv/` are gitignored. The grep above is belt-and-braces — if either line
-prints anything, stop and tell me.
+`.env` and `.venv/` are gitignored; the checks above are belt-and-braces. They print the
+**filename** of anything they find, so a hit is unambiguous rather than a mystery line of
+diff. (Don't grep for the word `service_role` — this file contains it, and the check
+matches its own instructions.)
+
+If either command prints a filename, stop and tell me.
 
 ## 2. GitHub
 
@@ -67,14 +74,42 @@ postgresql+psycopg://postgres.abcdefgh:YOUR-PASSWORD@aws-0-ap-south-1.pooler.sup
 > **Percent-encode your password** if it contains `@ # ? / :` — e.g. `@` becomes `%40`.
 > Otherwise the URI parses wrong and you get a baffling auth error.
 
-Then, from **Settings → API**, grab:
+### The API keys
 
-- **Project URL** → `SUPABASE_URL`
-- **anon public** key → `SUPABASE_ANON_KEY` (public by design; it ships to the browser)
-- **JWT Secret** → `SUPABASE_JWT_SECRET` (secret — never sent to the browser)
+Supabase renamed these in 2025. **Settings → API Keys** now shows a *publishable* key and
+a *secret* key:
 
-And create your login: **Authentication → Users → Add user** (email + password, tick
-auto-confirm). The app has no signup page on purpose.
+| Key | Formerly | Put it in |
+|---|---|---|
+| **Publishable** `sb_publishable_…` | `anon` | `SUPABASE_ANON_KEY` |
+| **Secret** `sb_secret_…` | `service_role` | **nowhere — do not use it** |
+
+The secret key **bypasses row-level security entirely**. It would hand back everything
+migration `9b1c4d7e2a01` locks down. This app never needs it: the backend talks to
+Postgres directly over SQLAlchemy, not through PostgREST. Leave it in the dashboard.
+
+The publishable key is *meant* to be public — the browser needs it to sign in, and the app
+serves it from `/api/config`. That is safe precisely *because* of the RLS lockdown.
+
+### The JWT secret — usually leave it EMPTY
+
+`SUPABASE_JWT_SECRET` is for the **legacy** signing scheme only. Modern projects sign user
+tokens with asymmetric keys (ECC/RSA) and publish the public half at a JWKS endpoint,
+which the app fetches on its own. So:
+
+- **New project** → leave `SUPABASE_JWT_SECRET` blank. Verification goes via JWKS.
+- **Legacy project** with a shared "JWT Secret" under Settings → API → JWT Keys → set it.
+
+Setting it tells the app to accept HS256 **and nothing else**; leaving it blank tells the
+app to accept the asymmetric algorithms **and nothing else**. The choice is made from
+config rather than read out of the token's own header, because trusting that header is the
+algorithm-confusion attack — an attacker signs a token with the *public* key as an HMAC
+secret and a naive verifier accepts it. There's a test for this in `tests/test_auth.py`.
+
+### Your login
+
+**Authentication → Users → Add user** (email + password, tick auto-confirm). The app has
+no signup page on purpose.
 
 ## 5. Migrate, then prove the data is private
 
@@ -82,14 +117,32 @@ Point your **local** `.env` at Supabase temporarily and run the migrations from 
 laptop — this creates the tables and, crucially, locks them away from Supabase's public
 REST API.
 
-```bash
-# In .env, set DATABASE_URL to the pooler URI from step 4, plus:
-#   AUTH_ENABLED=true
-#   SUPABASE_URL=...
-#   SUPABASE_ANON_KEY=...
-#   SUPABASE_JWT_SECRET=...
-#   REFRESH_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+First invent a refresh token. **Run this in your shell** — a `.env` file does not execute
+`$( )`, so pasting the command itself would make the literal text your secret:
 
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+`REFRESH_TOKEN` is not a Supabase thing despite the name. It is a shared password between
+GitHub Actions and your app, guarding `POST /api/refresh` — Actions has no browser session
+so it cannot log in as you. You invent it, and it must be **the same value** in Render and
+in your GitHub repo secrets, or the nightly refresh 401s and your snapshots quietly stop.
+
+Now fill in `.env` with literal values:
+
+```ini
+DATABASE_URL=postgresql+psycopg://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres
+AUTH_ENABLED=true
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_ANON_KEY=sb_publishable_...
+SUPABASE_JWT_SECRET=
+REFRESH_TOKEN=<the string the command above printed>
+```
+
+Then:
+
+```bash
 .venv/bin/alembic upgrade head
 .venv/bin/python -m scripts.verify_supabase
 ```

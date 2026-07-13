@@ -11,7 +11,7 @@ from sqlalchemy import text
 from app.core.models import Quote
 from app.core.sectors import Market
 from app.ingest.template_writer import build_workbook
-from app.store.db import connect, create_all
+from app.store.db import connect, create_all, engine
 
 TABLES = (
     "transactions",
@@ -21,9 +21,24 @@ TABLES = (
     "insights",
 )
 
+# This suite TRUNCATEs every table. Pointed at a real database it would silently destroy
+# a live portfolio -- and DATABASE_URL is a single env var that gets flipped to Supabase
+# whenever you run a migration against production. Refuse to run anywhere but a local
+# database, so the accident is impossible rather than merely unlikely.
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "postgres", "db")
+
 
 @pytest.fixture(scope="session", autouse=True)
 def schema():
+    host = engine().url.host or ""
+    if host not in LOCAL_HOSTS:
+        pytest.exit(
+            f"\n\nRefusing to run: DATABASE_URL points at '{host}', not a local database."
+            f"\nThese tests TRUNCATE every table. Running them here would destroy real data."
+            f"\n\nPoint DATABASE_URL back at the local Postgres and try again:"
+            f"\n  DATABASE_URL=postgresql+psycopg://pm:pm@localhost:5433/portfolio\n",
+            returncode=2,
+        )
     create_all()
 
 
