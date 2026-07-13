@@ -299,7 +299,7 @@ def read_holdings(
     """
     if is_csv(filename):
         return _read_csv(_as_bytes(source), market, keep_custom_sectors)
-    return _read_workbook(_as_bytes(source), keep_custom_sectors)
+    return _read_workbook(_as_bytes(source), keep_custom_sectors, market)
 
 
 def _read_csv(
@@ -336,39 +336,73 @@ def _read_csv(
 
 
 def _read_workbook(
-    content: bytes, keep_custom_sectors: bool = False
+    content: bytes,
+    keep_custom_sectors: bool = False,
+    market: Market | None = None,
 ) -> tuple[list[HoldingRow], ValidationReport]:
+    """Read a workbook, in either of two shapes.
+
+    Our template names its sheets India_Holdings / US_Holdings, and the sheet a row sits
+    on IS its market. But that is a convenience, not a requirement: a broker's own .xlsx
+    has whatever sheet name it likes, and demanding that the user rename a tab before we
+    will read their file would be gatekeeping. Any sheet carrying the right columns is
+    read -- and then, like a CSV, the market has to come from the upload form.
+    """
     workbook = load_workbook(BytesIO(content), data_only=True)
     errors: list[RowError] = []
     warnings: list[RowError] = []
     parsed: list[HoldingRow] = []
-    found = False
 
-    for market, sheet_name in HOLDINGS_SHEETS.items():
-        if sheet_name not in workbook.sheetnames:
-            continue
-        found = True
+    named = [s for s in HOLDINGS_SHEETS.values() if s in workbook.sheetnames]
+    if named:
+        for sheet_market, sheet_name in HOLDINGS_SHEETS.items():
+            if sheet_name not in workbook.sheetnames:
+                continue
+            sheet = workbook[sheet_name]
+            header = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
+            columns = _map_headers(list(header))
+            if _missing(columns, REQUIRED_HOLDINGS_COLUMNS, sheet_name, errors):
+                continue
+            rows = list(sheet.iter_rows(min_row=2, values_only=True))
+            parsed += _read_rows(
+                rows, columns, sheet_market, sheet_name, errors, warnings,
+                keep_custom_sectors,
+            )
+        return parsed, ValidationReport(errors, warnings)
+
+    # No sheet of ours. Find the first one that carries the columns we need.
+    for sheet_name in workbook.sheetnames:
         sheet = workbook[sheet_name]
         header = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
         columns = _map_headers(list(header))
-        if _missing(columns, REQUIRED_HOLDINGS_COLUMNS, sheet_name, errors):
+        if any(c not in columns for c in REQUIRED_HOLDINGS_COLUMNS):
             continue
 
+        if market is None:
+            errors.append(
+                RowError(
+                    sheet_name, 0, "market",
+                    "This workbook does not say which market it is for (only our own "
+                    "template does, via its sheet names). Choose India or US on the "
+                    "upload form.",
+                )
+            )
+            return [], ValidationReport(errors, warnings)
+
         rows = list(sheet.iter_rows(min_row=2, values_only=True))
-        parsed += _read_rows(
+        parsed = _read_rows(
             rows, columns, market, sheet_name, errors, warnings, keep_custom_sectors
         )
+        return parsed, ValidationReport(errors, warnings)
 
-    if not found:
-        expected = " or ".join(HOLDINGS_SHEETS.values())
-        errors.append(
-            RowError(
-                "(workbook)", 0, "sheets",
-                f"No {expected} sheet found. If this is a broker export, upload it as "
-                ".csv and pick the market on the upload form.",
-            )
+    needed = ", ".join(REQUIRED_HOLDINGS_COLUMNS)
+    errors.append(
+        RowError(
+            "(workbook)", 0, "columns",
+            f"No sheet in this file has the columns we need ({needed}). Broker headers "
+            "like Symbol, Quantity Available and Average Price are understood too.",
         )
-
+    )
     return parsed, ValidationReport(errors, warnings)
 
 

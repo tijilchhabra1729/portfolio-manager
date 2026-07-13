@@ -62,11 +62,11 @@
             <label><input type="radio" name="mode" value="append" checked> Add to portfolio</label>
             <label><input type="radio" name="mode" value="replace"> Replace portfolio</label>
           </div>
-          <!-- The .xlsx template carries the market in its sheet names. A broker CSV is a
-               flat file that says nothing about which market it is for, so it has to be
-               chosen here. Revealed only when a .csv is picked. -->
+          <!-- Only OUR template carries the market, in its sheet names. Any other file
+               -- a broker CSV or a broker .xlsx -- says nothing about it, so it has to be
+               chosen here. Ignored when the file does say. -->
           <div class="radio" id="csv-market" hidden>
-            <span class="dim">CSV market:</span>
+            <span class="dim">Market (used if the file doesn't say):</span>
             <label><input type="radio" name="market" value="INDIA" checked> India</label>
             <label><input type="radio" name="market" value="US"> US</label>
           </div>

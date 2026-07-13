@@ -650,19 +650,19 @@ async function boot() {
   $("export").onclick = () => {
     window.location = `/api/${S.market}/export`;
   };
-  // Only a CSV needs the market asked for; the workbook already knows from its sheets.
+  // Show the market picker for any file at all. Only OUR template names its sheets
+  // India_Holdings / US_Holdings and therefore already knows; a broker's own .xlsx is
+  // just as market-less as a CSV, and the server ignores this when the file does say.
   const csvMarket = $("csv-market");
   $("upload-file").onchange = (e) => {
-    const name = e.target.files[0]?.name || "";
-    csvMarket.hidden = !name.toLowerCase().endsWith(".csv");
+    csvMarket.hidden = !e.target.files.length;
   };
 
   $("upload-go").onclick = async () => {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const extra = { mode, keep_custom_sectors: $("keep-sectors").checked };
-    if (!csvMarket.hidden) {
-      extra.market = document.querySelector('input[name="market"]:checked').value;
-    }
+    const market = document.querySelector('input[name="market"]:checked');
+    if (market) extra.market = market.value;
     const result = await send("/api/portfolio/upload", $("upload-file"), extra);
     if (result) {
       showOk(

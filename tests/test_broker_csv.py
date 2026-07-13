@@ -182,3 +182,70 @@ def test_the_xlsx_template_still_works_unchanged(sample_workbook):
     assert report.ok, report.as_dicts()
     assert {r.market for r in rows} == {Market.INDIA, Market.US}
     assert len(rows) == 10
+
+
+# --- broker .xlsx (not just .csv) ----------------------------------------------------
+
+
+def _broker_xlsx(sheet_name: str = "Holdings") -> bytes:
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+    ws.append(["Symbol", "Sector", "Quantity Available", "Average Price"])
+    ws.append(["RELIANCE", "Energy", 50, 1180.00])
+    ws.append(["HDFCBANK", "Banks", 100, 890.50])
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def test_a_broker_xlsx_with_its_own_sheet_name_is_read():
+    """Our template names its sheets India_Holdings / US_Holdings, but that is a
+    convenience for carrying the market -- not a requirement. Making someone rename a tab
+    before we will read their file would be gatekeeping."""
+    rows, report = read_holdings(
+        _broker_xlsx("Equity"), filename="kite.xlsx", market=Market.INDIA
+    )
+    assert report.ok, report.as_dicts()
+    assert len(rows) == 2
+    assert next(r for r in rows if r.ticker == "HDFCBANK").sector == "Financial services"
+    assert all(r.market is Market.INDIA for r in rows)
+
+
+def test_a_broker_xlsx_without_a_market_is_rejected():
+    """Same rule as a CSV: nothing in the file says which market, so we must not guess."""
+    rows, report = read_holdings(_broker_xlsx(), filename="kite.xlsx")
+    assert not report.ok
+    assert rows == []
+    assert "does not say which market" in report.errors[0].message
+
+
+def test_a_workbook_with_no_usable_columns_says_so():
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.append(["Foo", "Bar", "Baz"])
+    buffer = BytesIO()
+    wb.save(buffer)
+
+    rows, report = read_holdings(
+        buffer.getvalue(), filename="junk.xlsx", market=Market.INDIA
+    )
+    assert not report.ok
+    assert "columns we need" in report.errors[0].message
+
+
+def test_our_template_still_ignores_the_market_argument(sample_workbook):
+    """The template names its sheets, so it decides per row -- a market passed on the
+    form must not override India_Holdings into US."""
+    rows, report = read_holdings(
+        sample_workbook, filename="portfolio.xlsx", market=Market.US
+    )
+    assert report.ok, report.as_dicts()
+    assert {r.market for r in rows} == {Market.INDIA, Market.US}
