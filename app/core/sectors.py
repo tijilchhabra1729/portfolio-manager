@@ -175,9 +175,21 @@ class MarketSpec:
     label: str
     currency: str
     symbol: str
-    yf_suffix: str
+    # Symbols to try on the data provider, in order. A stock can be listed on one Indian
+    # exchange and not the other, so a .NS miss is worth retrying on .BO.
+    #
+    # These stay WITHIN one market on purpose. Ticker symbols are not globally unique --
+    # IEX is Indian Energy Exchange on the NSE and an energy company on the NASDAQ -- so
+    # falling back from a US symbol to a .NS one would price a US holding with a rupee
+    # quote and label it in dollars. The currency guard in YFinanceProvider is the second
+    # line of defence against exactly that.
+    yf_suffixes: tuple[str, ...]
     sectors: tuple[str, ...]
     aliases: dict[str, str]
+
+    @property
+    def yf_suffix(self) -> str:
+        return self.yf_suffixes[0]
 
 
 MARKETS: dict[Market, MarketSpec] = {
@@ -186,7 +198,7 @@ MARKETS: dict[Market, MarketSpec] = {
         label="India (NSE)",
         currency="INR",
         symbol="₹",
-        yf_suffix=".NS",
+        yf_suffixes=(".NS", ".BO"),  # NSE first, then BSE for anything NSE does not list
         sectors=INDIA_SECTORS,
         aliases=INDIA_ALIASES,
     ),
@@ -195,7 +207,7 @@ MARKETS: dict[Market, MarketSpec] = {
         label="United States",
         currency="USD",
         symbol="$",
-        yf_suffix="",
+        yf_suffixes=("",),
         sectors=US_SECTORS,
         aliases=US_ALIASES,
     ),
@@ -241,10 +253,21 @@ def is_valid_sector(market: Market, sector: str) -> bool:
     return sector in MARKETS[market].sectors
 
 
-def yf_symbol(ticker: str, market: Market) -> str:
+def yf_symbol(ticker: str, market: Market, suffix: str | None = None) -> str:
     """Map a plain ticker to the symbol yfinance expects (RELIANCE -> RELIANCE.NS)."""
     ticker = ticker.strip().upper()
-    suffix = MARKETS[market].yf_suffix
+    if suffix is None:
+        suffix = MARKETS[market].yf_suffix
     if suffix and not ticker.endswith(suffix):
         return f"{ticker}{suffix}"
     return ticker
+
+
+def yf_candidates(ticker: str, market: Market) -> list[str]:
+    """Every symbol worth trying for this ticker, best first."""
+    seen: list[str] = []
+    for suffix in MARKETS[market].yf_suffixes:
+        candidate = yf_symbol(ticker, market, suffix)
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
