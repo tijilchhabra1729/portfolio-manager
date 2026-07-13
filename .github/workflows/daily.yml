@@ -17,12 +17,39 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - name: Wake the service and refresh prices
+      # An unset secret is an empty string, not an error. Without this the run dies six
+      # times over on `curl: (3) No host part in the URL`, which says nothing about the
+      # actual problem.
+      - name: Check the secrets are set
         env:
           APP_URL: ${{ secrets.APP_URL }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: |
+          missing=0
+          if [ -z "${APP_URL}" ]; then
+            echo "::error::Repo secret APP_URL is not set. Add your Render URL under"
+            echo "::error::Settings -> Secrets and variables -> Actions, e.g."
+            echo "::error::  https://portfolio-manager-xxxx.onrender.com   (no trailing slash)"
+            missing=1
+          elif ! echo "${APP_URL}" | grep -qE '^https?://'; then
+            echo "::error::APP_URL must include the scheme: https://your-app.onrender.com"
+            missing=1
+          fi
+          if [ -z "${REFRESH_TOKEN}" ]; then
+            echo "::error::Repo secret REFRESH_TOKEN is not set. It must match the"
+            echo "::error::REFRESH_TOKEN env var you gave Render, or /api/refresh will 401."
+            missing=1
+          fi
+          exit $missing
+
+      - name: Wake the service and refresh prices
+        env:
+          # Trim any trailing slash: "https://x.com/" + "/healthz" is a 404.
+          APP_URL: ${{ secrets.APP_URL }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+        run: |
           set -euo pipefail
+          APP_URL="${APP_URL%/}"
 
           # The free tier sleeps after ~15 minutes idle and takes up to a minute to wake,
           # so the first call is a health check with a generous budget rather than the

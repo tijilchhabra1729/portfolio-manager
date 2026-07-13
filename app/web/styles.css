@@ -191,6 +191,25 @@ input[type="file"]::file-selector-button {
 .radio label { display: flex; gap: 5px; align-items: center; font-weight: 400; cursor: pointer; }
 .links { display: grid; gap: 4px; font-size: 13px; }
 
+/* --- sign in / sign up ----------------------------------------------------- */
+
+.auth { max-width: 380px; margin: 12vh auto; display: grid; gap: 10px; }
+.auth h1 { font-size: 22px; }
+.auth .empty { margin: -6px 0 6px; }
+.auth input {
+  width: 100%; padding: 11px 12px; border-radius: 9px; font: inherit;
+  border: 1px solid var(--hairline); background: var(--plane); color: var(--ink);
+}
+.auth input:focus { outline: 2px solid var(--seq-450); outline-offset: -1px; }
+.auth .action { width: 100%; justify-content: center; }
+.auth-msg { font-size: 13px; color: var(--ink-2); min-height: 18px; margin: 0; }
+
+button.linkish {
+  background: none; border: 0; padding: 4px; cursor: pointer;
+  color: var(--seq-450); font: inherit; font-size: 13px; font-weight: 550;
+}
+button.linkish:hover { text-decoration: underline; }
+
 .errors { margin-top: 14px; font-size: 13px; }
 .errors li { list-style: none; padding: 7px 10px; border-left: 3px solid var(--loss); background: var(--plane); margin-bottom: 5px; border-radius: 0 6px 6px 0; }
 .errors code { color: var(--muted); margin-right: 8px; }

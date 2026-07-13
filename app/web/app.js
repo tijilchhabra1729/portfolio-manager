@@ -66,7 +66,7 @@ async function api(path, options = {}) {
   if (res.status === 401 && S.config.auth_enabled) {
     S.token = "";
     localStorage.removeItem("token");
-    renderLogin();
+    renderAuth();
     throw new Error("Signed out");
   }
   if (!res.ok) {
@@ -474,47 +474,109 @@ async function load(refresh = false) {
   }
 }
 
-/* --- auth (only when AUTH_ENABLED) ---------------------------------------- */
+/* --- auth (only when AUTH_ENABLED) ----------------------------------------
+ * Talks to Supabase's auth API directly with the publishable key -- there is no SDK and
+ * no CDN script. We never see a password: Supabase issues a JWT, the browser keeps it,
+ * and our API only ever verifies it.
+ *
+ * Every row is scoped by the token's `sub`, so two accounts on the same deployment have
+ * completely separate portfolios.
+ */
 
-function renderLogin() {
-  document.querySelector(".wrap").innerHTML = "";
-  const card = el("div", "card");
-  card.style.maxWidth = "360px";
-  card.style.margin = "80px auto";
-  card.appendChild(el("h2", null, "Sign in"));
+async function supabaseAuth(path, body) {
+  const res = await fetch(`${S.config.supabase_url}/auth/v1/${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: S.config.supabase_anon_key,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      data.error_description || data.msg || data.message || "Something went wrong."
+    );
+  }
+  return data;
+}
+
+function renderAuth(mode = "signin") {
+  const signup = mode === "signup";
+  const wrap = document.querySelector(".wrap");
+  wrap.innerHTML = "";
+
+  const card = el("div", "card auth");
+  card.appendChild(el("h1", null, "Portfolio"));
+  card.appendChild(
+    el("p", "empty", signup ? "Create an account." : "Sign in to your portfolio.")
+  );
 
   const email = el("input");
   email.type = "email";
   email.placeholder = "you@example.com";
+  email.autocomplete = "email";
+
   const password = el("input");
   password.type = "password";
-  password.placeholder = "Password";
-  [email, password].forEach((i) => {
-    i.style.cssText = "width:100%;padding:9px;margin-bottom:8px;border-radius:8px;border:1px solid var(--hairline);background:var(--plane);color:var(--ink);font:inherit";
-    card.appendChild(i);
-  });
+  password.placeholder = signup ? "Password (8+ characters)" : "Password";
+  password.autocomplete = signup ? "new-password" : "current-password";
 
-  const go = el("button", "action", "Sign in");
-  go.style.width = "100%";
-  const error = el("p", "empty");
-  go.onclick = async () => {
-    const res = await fetch(`${S.config.supabase_url}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: S.config.supabase_anon_key },
-      body: JSON.stringify({ email: email.value, password: password.value }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      error.textContent = data.error_description || data.msg || "Sign-in failed.";
+  const message = el("p", "auth-msg");
+  const submit = el("button", "action", signup ? "Create account" : "Sign in");
+
+  const go = async () => {
+    message.textContent = "";
+    message.className = "auth-msg";
+
+    if (signup && password.value.length < 8) {
+      message.className = "auth-msg loss";
+      message.textContent = "Use at least 8 characters.";
       return;
     }
-    S.token = data.access_token;
-    localStorage.setItem("token", S.token);
-    location.reload();
+
+    submit.disabled = true;
+    submit.textContent = signup ? "Creating…" : "Signing in…";
+    try {
+      const credentials = { email: email.value.trim(), password: password.value };
+      const data = signup
+        ? await supabaseAuth("signup", credentials)
+        : await supabaseAuth("token?grant_type=password", credentials);
+
+      if (data.access_token) {
+        S.token = data.access_token;
+        localStorage.setItem("token", S.token);
+        location.reload();
+        return;
+      }
+
+      // Signed up, but the project requires email confirmation, so there is no session
+      // yet. Say so plainly instead of leaving them staring at a form that "worked".
+      message.className = "auth-msg";
+      message.textContent = `Check ${credentials.email} for a confirmation link, then sign in.`;
+      submit.disabled = false;
+      submit.textContent = signup ? "Create account" : "Sign in";
+    } catch (e) {
+      message.className = "auth-msg loss";
+      message.textContent = e.message;
+      submit.disabled = false;
+      submit.textContent = signup ? "Create account" : "Sign in";
+    }
   };
-  card.appendChild(go);
-  card.appendChild(error);
-  document.querySelector(".wrap").appendChild(card);
+
+  submit.onclick = go;
+  [email, password].forEach((input) => {
+    input.onkeydown = (e) => e.key === "Enter" && go();
+    card.appendChild(input);
+  });
+  card.appendChild(submit);
+  card.appendChild(message);
+
+  const swap = el("button", "linkish", signup ? "Have an account? Sign in" : "New here? Create an account");
+  swap.onclick = () => renderAuth(signup ? "signin" : "signup");
+  card.appendChild(swap);
+
+  wrap.appendChild(card);
 }
 
 /* --- boot ----------------------------------------------------------------- */
@@ -522,10 +584,19 @@ function renderLogin() {
 async function boot() {
   S.config = await (await fetch("/api/config")).json();
   if (S.config.auth_enabled && !S.token) {
-    renderLogin();
+    renderAuth();
     return;
   }
   S.markets = await api("/api/portfolio/markets");
+
+  if (S.config.auth_enabled) {
+    const out = el("button", "action", "Sign out");
+    out.onclick = () => {
+      localStorage.removeItem("token");
+      location.reload();
+    };
+    document.querySelector("header").appendChild(out);
+  }
 
   $("refresh").onclick = () => load(true);
   $("export").onclick = () => {
