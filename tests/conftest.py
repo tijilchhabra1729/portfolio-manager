@@ -61,6 +61,25 @@ def _no_live_llm_keys(monkeypatch):
     monkeypatch.setattr(s, "anthropic_api_key", "", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _offline_briefing_providers(monkeypatch):
+    """The briefing graph falls back to real Google News / yfinance providers when a caller
+    doesn't inject its own. Point the module defaults at offline stubs so no test — including
+    the API/service ones that run the whole graph with model=None — reaches the network."""
+    from app.agents.briefing import graph as _graph
+
+    class _NoNews:
+        def get_news(self, *args, **kwargs):
+            return []
+
+    class _NoFundamentals:
+        def get_fundamentals(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(_graph, "_default_news", _NoNews(), raising=False)
+    monkeypatch.setattr(_graph, "_default_fundamentals", _NoFundamentals(), raising=False)
+
+
 @pytest.fixture
 def conn():
     """One transaction per test, rolled back afterwards, so tests cannot see each

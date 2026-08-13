@@ -13,6 +13,7 @@ import pytest
 from app.agents.briefing import market_agent, orchestrator, sector_agent
 from app.agents.briefing.graph import run_briefing
 from app.llm.base import AnalystError
+from app.market.news import Headline
 from tests.conftest import FakeModel
 
 
@@ -20,8 +21,35 @@ from tests.conftest import FakeModel
 
 
 class NoNews:
-    def get_news(self, market, tickers, *, per_ticker=3, within_days=7):
+    def get_news(self, market, tickers, *, per_ticker=3, within_days=7, names=None):
         return []
+
+
+class FakeNews:
+    """Canned headlines per ticker, so a test can drive the *news* — and therefore the
+    direction — completely independently of any price or P/L."""
+
+    def __init__(self, titles):
+        self.by_ticker: dict[str, list[str]] = {}
+        for ticker, title in titles:
+            self.by_ticker.setdefault(ticker, []).append(title)
+
+    def get_news(self, market, tickers, *, per_ticker=3, within_days=7, names=None):
+        return [
+            Headline(ticker=t, title=title, summary="", publisher="x", published=None)
+            for t in tickers
+            for title in self.by_ticker.get(t, [])[:per_ticker]
+        ]
+
+
+class MarketNews:
+    """Bullish headlines for INDIA, bearish for US — gives the graph deterministic,
+    news-driven per-market directions with no model in play."""
+
+    def get_news(self, market, tickers, *, per_ticker=3, within_days=7, names=None):
+        good = market.value == "INDIA"
+        phrase = "surges to a record high as profit jumps" if good else "tumbles on a downgrade and weak guidance"
+        return [Headline(ticker=t, title=f"{t} {phrase}", summary="", publisher="x", published=None) for t in tickers]
 
 
 class NoFund:
@@ -83,30 +111,32 @@ def test_sector_agent_llm_reply_filters_to_held():
     assert finding.tickers == ["AAA"]  # NOTHELD dropped — not in the sector's holdings
 
 
-def test_sector_agent_deterministic_without_a_model():
+def test_sector_agent_no_news_no_model_is_neutral():
+    # No model and no news -> neutral. Crucially NOT derived from the (positive) P/L.
     finding = sector_agent.analyze(_task("INDIA", "IT", pnl=8.0), None, None, None)
-    assert finding.direction == "positive"  # +8% P/L
-    assert "position P/L" in finding.what_it_indicates
+    assert finding.direction == "neutral"
+    assert "No material recent news" in finding.what_happened
 
 
-def test_sector_agent_negative_direction_from_loss():
-    finding = sector_agent.analyze(_task("INDIA", "IT", pnl=-9.0), None, None, None)
+def test_sector_agent_direction_comes_from_news_not_pnl():
+    # Big positive P/L, but the news is clearly bad -> the direction must follow the NEWS.
+    news = FakeNews([("AAA", "AAA shares plunge as the company misses profit and issues a warning")])
+    finding = sector_agent.analyze(_task("INDIA", "IT", pnl=25.0), None, news, None)
     assert finding.direction == "negative"
 
 
-def test_sector_agent_model_failure_falls_back_not_raises():
+def test_sector_agent_positive_news_despite_a_loss():
+    news = FakeNews([("AAA", "AAA surges to a record high as profit jumps and analysts upgrade")])
+    finding = sector_agent.analyze(_task("INDIA", "IT", pnl=-25.0), None, news, None)
+    assert finding.direction == "positive"
+
+
+def test_sector_agent_model_failure_falls_back_to_news_not_pnl():
     model = FakeModel("groq", [AnalystError("x"), AnalystError("x")])
-    finding = sector_agent.analyze(_task("INDIA", "IT", pnl=3.0), model, None, None)
-    assert finding.direction == "positive"  # deterministic from +3%
-    assert "position P/L" in finding.what_it_indicates
-
-
-def test_sector_agent_unpriced_is_neutral():
-    task = _task("INDIA", "IT")
-    task["holdings"][0]["pnl_pct"] = None
-    finding = sector_agent.analyze(task, None, None, None)
-    assert finding.direction == "neutral"
-    assert "could not be priced" in finding.what_happened
+    news = FakeNews([("AAA", "AAA stock tumbles on a downgrade and weak guidance")])
+    finding = sector_agent.analyze(_task("INDIA", "IT", pnl=3.0), model, news, None)
+    assert finding.direction == "negative"  # from the news, not the +3% P/L
+    assert "without an analyst model" in finding.what_it_indicates
 
 
 def test_sector_agent_coerces_a_bad_direction():
@@ -202,25 +232,28 @@ def test_graph_empty_portfolio_short_circuits():
     assert "Nothing to brief" in b["headline"]
 
 
-def test_graph_partial_failure_degrades_one_sector():
-    tasks = [_task("INDIA", "IT", pnl=6.0), _task("INDIA", "Energy", pnl=-7.0)]
+def test_graph_partial_failure_degrades_one_sector_using_news():
+    tasks = [_task("INDIA", "IT"), _task("INDIA", "Energy")]
     ctx = {"INDIA": {"currency": "INR", "pnl_pct": 0.0}}
     model = RoutingModel(fail_sector="Energy")  # Energy's sector agent throws
+    news = FakeNews([("AAA", "AAA stock tumbles on a downgrade, misses profit and issues a warning")])
     b = run_briefing(user_id="local", plan="free", sector_tasks=tasks, market_ctx=ctx,
-                     model=model, news=NoNews(), fundamentals=NoFund())
+                     model=model, news=news, fundamentals=NoFund())
     india = b["markets"][0]
     energy = next(s for s in india["sectors"] if s["sector"] == "Energy")
     it = next(s for s in india["sectors"] if s["sector"] == "IT")
-    # Energy fell back to its deterministic P/L reading; IT used the model.
+    # Energy fell back — but to a NEWS-driven read (negative from the headlines), not P/L.
     assert energy["direction"] == "negative"
-    assert "position P/L" in energy["what_it_indicates"]
-    assert it["direction"] == "positive"
+    assert "without an analyst model" in energy["what_it_indicates"]
+    assert it["direction"] == "positive"  # IT used the model
 
 
-def test_graph_no_model_is_fully_deterministic():
-    tasks = [_task("INDIA", "IT", pnl=10.0), _task("US", "Information Technology", pnl=-4.0)]
+def test_graph_no_model_is_news_driven():
+    tasks = [_task("INDIA", "IT"), _task("US", "Information Technology")]
     ctx = {"INDIA": {"currency": "INR", "pnl_pct": 6.0}, "US": {"currency": "USD", "pnl_pct": -2.0}}
-    b = run_briefing(user_id="local", plan="free", sector_tasks=tasks, market_ctx=ctx, model=None)
+    # No model: directions come from the headlines (bullish IN, bearish US), never the P/L.
+    b = run_briefing(user_id="local", plan="free", sector_tasks=tasks, market_ctx=ctx,
+                     model=None, news=MarketNews(), fundamentals=NoFund())
     assert b["generated_by"] == "rules"
     assert any("IT (INDIA)" in p for p in b["positives"])
     assert any("Information Technology (US)" in n for n in b["negatives"])

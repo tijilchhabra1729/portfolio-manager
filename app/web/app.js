@@ -1471,90 +1471,9 @@ function toastBriefing(text) {
   setTimeout(() => t.remove(), 6000);
 }
 
-/* --- Membership + plan chip ----------------------------------------------- */
-
-async function loadPlan() {
-  // Billing only matters with auth on (multi-user). Local single-user dev hides it.
-  if (!S.config.auth_enabled) return;
-  try {
-    S.plan = await api("/api/billing/plan");
-  } catch {
-    return;
-  }
-  paintPlanChip();
-  renderMembership();
-}
-
-function paintPlanChip() {
-  const chip = $("plan-chip");
-  if (!S.plan) return;
-  chip.hidden = false;
-  const premium = S.plan.plan === "premium";
-  chip.textContent = premium ? "★ Premium" : "Free plan";
-  chip.classList.toggle("premium", premium);
-  chip.onclick = () => setTab("manage");
-}
-
-function renderMembership() {
-  if (!S.plan) return;
-  $("membership-card").hidden = false;
-  const host = $("membership");
-  host.innerHTML = "";
-  const premium = S.plan.plan === "premium";
-
-  const current = el("div", "current");
-  current.appendChild(el("div", "plan", premium ? "Premium" : "Free"));
-  current.appendChild(
-    el("div", "sub",
-      premium
-        ? "Claude-powered analysis, unlimited stock explores."
-        : "Groq-powered analysis, 5 stock explores a day.")
-  );
-  host.appendChild(current);
-  host.appendChild(el("div", "spacer"));
-
-  if (!premium) {
-    const upgrade = el("button", "action primary", S.plan.stripe_enabled ? "Upgrade to Premium" : "Upgrade (test mode)");
-    upgrade.onclick = doUpgrade;
-    host.appendChild(upgrade);
-  } else if (S.plan.stripe_enabled) {
-    const manage = el("button", "action", "Manage subscription");
-    manage.onclick = openPortal;
-    host.appendChild(manage);
-  } else {
-    const down = el("button", "action", "Switch to Free (test mode)");
-    down.onclick = doUpgrade;  // the flip toggles either way
-    host.appendChild(down);
-  }
-
-  if (!S.plan.stripe_enabled) {
-    host.appendChild(el("div", "test-hint", "STRIPE_ENABLED=false — plan changes are instant and local."));
-  }
-}
-
-async function doUpgrade() {
-  try {
-    const r = await api("/api/billing/checkout", { method: "POST" });
-    if (r.mode === "stripe") {
-      window.location = r.url;  // off to Stripe Checkout
-      return;
-    }
-    S.plan.plan = r.plan;  // test-mode flip returned the new plan
-    paintPlanChip();
-    renderMembership();
-  } catch (e) {
-    alert(e.detail || e.message || "Couldn't change plan.");
-  }
-}
-
-async function openPortal() {
-  try {
-    const r = await api("/api/billing/portal", { method: "POST" });
-    window.location = r.url;
-  } catch (e) {
-    alert(e.detail || e.message);
-  }
-}
+/* Billing / plan UI intentionally omitted. Plan tiering is still enforced
+   server-side (select_model uses the user's stored plan); the app deliberately
+   shows no upgrade, membership, or plan-status surface. */
 
 /* --- boot ----------------------------------------------------------------- */
 
@@ -1614,7 +1533,6 @@ async function boot() {
     e.preventDefault();
     runExplore();
   };
-  loadPlan();
 
   load();
 }

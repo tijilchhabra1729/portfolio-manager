@@ -33,8 +33,6 @@
         <div class="clock" id="clock" aria-live="off"></div>
       </div>
       <div class="spacer"></div>
-      <!-- Plan badge: hidden until /api/config says auth is on and a plan is known. -->
-      <button class="plan-chip" id="plan-chip" hidden></button>
       <div class="toggle" id="market-toggle" role="group" aria-label="Market"></div>
       <button class="action" id="refresh">Refresh prices</button>
       <button class="action" id="export">Export .xlsx ↓</button>
@@ -151,13 +149,6 @@
             <a href="/api/portfolio/template?kind=sample">Filled sample ↓</a>
           </div>
           <div id="upload-result"></div>
-        </section>
-
-        <!-- Membership. Only meaningful when auth is on; hidden otherwise so single-user
-             local dev isn't cluttered by a plan nobody chose. -->
-        <section class="card" id="membership-card" hidden>
-          <h2><span class="idx">06.1</span>Membership</h2>
-          <div class="membership" id="membership"></div>
         </section>
       </section>
     </main>

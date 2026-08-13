@@ -36,11 +36,18 @@ from app.agents.briefing import market_agent, orchestrator, sector_agent
 from app.agents.briefing.state import BriefingState
 from app.llm.base import AnalystModel
 from app.market.fundamentals import FundamentalsProvider, YFinanceFundamentals
-from app.market.news import NewsProvider, YFinanceNewsProvider
+from app.market.news import (
+    CombinedNewsProvider,
+    GoogleNewsRSSProvider,
+    NewsProvider,
+    YFinanceNewsProvider,
+)
 
 log = logging.getLogger(__name__)
 
-_default_news = YFinanceNewsProvider()
+# Google News (keyless, searches by company name, sentiment-legible headlines) is the
+# primary source; yfinance fills in any holding Google returned nothing for.
+_default_news = CombinedNewsProvider([GoogleNewsRSSProvider(), YFinanceNewsProvider()])
 _default_fundamentals = YFinanceFundamentals()
 
 

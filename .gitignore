@@ -9,3 +9,5 @@ data/exports/
 .DS_Store
 .claude/
 graphify-out/
+CLAUDE.md
+DEPLOY.md
