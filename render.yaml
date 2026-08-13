@@ -29,3 +29,16 @@ services:
         sync: false
       - key: PRICE_CACHE_TTL_MINUTES
         value: "15"
+      # LLM analyst + hierarchical briefing. WITHOUT a key here, "Explore a stock" gets no
+      # analyst read and the briefing falls back to deterministic output — the features look
+      # broken in production even though they work locally (where .env supplies the key).
+      # Gemini's free tier is the preferred provider; set the value in the Render dashboard,
+      # never in the repo (sync: false means Render stores it, git never sees it).
+      - key: GEMINI_API_KEY
+        sync: false
+      # Optional extra providers: Groq is the other free tier; Anthropic powers the premium
+      # (Claude) tier. Leave unset to run on Gemini alone.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
