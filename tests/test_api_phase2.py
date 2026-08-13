@@ -184,6 +184,11 @@ def test_briefing_generate_and_fetch(client, sample_workbook, monkeypatch):
 
 
 def test_briefing_cooldown_skips_second_run(client, sample_workbook, monkeypatch):
+    from app.config import settings
+
+    # The default cooldown is now 0 (on-demand regeneration); set one explicitly to exercise
+    # the guard that stops a second run from re-billing the agent tree.
+    monkeypatch.setattr(settings(), "briefing_cooldown_minutes", 720, raising=False)
     _seed(client, sample_workbook)
     monkeypatch.setattr(briefing_service, "select_model", lambda plan: None)
     assert client.post("/api/briefing").json()["generated"] is True

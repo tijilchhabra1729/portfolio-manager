@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-4-8"
 
+    # Fundamentals fallback. Yahoo's `.info` (ratios) endpoint is blocked from many
+    # datacenter IPs, so Explore shows no ratios on a cloud host. Finnhub's free tier is a
+    # keyed source that works from those IPs — used only when `.info` comes back empty, and
+    # only for US-listed symbols (the free plan doesn't carry NSE/BSE). Unset = yfinance only.
+    finnhub_api_key: str = ""
+
     # A newly-generated analyst insight is reused for this long before a button is
     # allowed to spend the LLM again — so clicking Analyze twice can't double-bill.
     analyst_cooldown_minutes: int = 30
@@ -75,7 +81,7 @@ class Settings(BaseSettings):
     # orchestrator, so it runs weekly (the Monday cron slot) and on demand. The cooldown
     # guards the on-demand button from re-billing the whole tree; the sector cap bounds
     # the fan-out; concurrency is held low so Groq's free-tier rate limits don't throttle.
-    briefing_cooldown_minutes: int = 720          # 12h between on-demand regenerations
+    briefing_cooldown_minutes: int = 0            # on-demand: the Generate button re-runs freely. Set BRIEFING_COOLDOWN_MINUTES to throttle re-billing.
     briefing_max_sectors_per_market: int = 8      # top-N sectors by allocation get an agent
     briefing_max_concurrency: int = 3             # parallel agents per run
 

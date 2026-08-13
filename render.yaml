@@ -42,3 +42,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Explore fundamentals fallback. Yahoo's ratios endpoint (.info) is blocked from
+      # Render's IP, so ratios are blank on the host. Finnhub's free tier is a keyed source
+      # that works from cloud IPs — US-listed tickers only (NSE/BSE aren't on the free plan).
+      # Get a free key at finnhub.io and set it here; leave unset to run on yfinance alone.
+      - key: FINNHUB_API_KEY
+        sync: false

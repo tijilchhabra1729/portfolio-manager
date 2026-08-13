@@ -35,7 +35,7 @@ from langgraph.types import Send
 from app.agents.briefing import market_agent, orchestrator, sector_agent
 from app.agents.briefing.state import BriefingState
 from app.llm.base import AnalystModel
-from app.market.fundamentals import FundamentalsProvider, YFinanceFundamentals
+from app.market.fundamentals import FundamentalsProvider, default_provider as _fundamentals_provider
 from app.market.news import (
     CombinedNewsProvider,
     GoogleNewsRSSProvider,
@@ -48,7 +48,8 @@ log = logging.getLogger(__name__)
 # Google News (keyless, searches by company name, sentiment-legible headlines) is the
 # primary source; yfinance fills in any holding Google returned nothing for.
 _default_news = CombinedNewsProvider([GoogleNewsRSSProvider(), YFinanceNewsProvider()])
-_default_fundamentals = YFinanceFundamentals()
+# yfinance + Finnhub (keyed, US) so sector fundamentals aren't blank on a cloud host either.
+_default_fundamentals = _fundamentals_provider()
 
 
 # --- nodes (thin adapters over the pure functions) ---------------------------------

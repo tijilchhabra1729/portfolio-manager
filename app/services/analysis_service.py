@@ -15,7 +15,7 @@ from app.agents import health_report, explorer, runner
 from app.config import settings
 from app.core.sectors import Market
 from app.llm.select import any_llm_configured, select_model
-from app.market.fundamentals import YFinanceFundamentals
+from app.market.fundamentals import default_provider as _default_fundamentals_provider
 from app.market.news import (
     CombinedNewsProvider,
     GoogleNewsRSSProvider,
@@ -26,7 +26,9 @@ from app.store import agent_repo
 
 log = logging.getLogger(__name__)
 
-_fundamentals = YFinanceFundamentals()
+# yfinance, with Finnhub as a keyed fallback for US ratios when FINNHUB_API_KEY is set —
+# so Explore shows ratios on a cloud host where Yahoo's .info is blocked.
+_fundamentals = _default_fundamentals_provider()
 # Google News (keyless, works from cloud IPs) first, yfinance as a fallback: Explore runs on
 # a datacenter host where Yahoo's news endpoint is blocked, so Google is what lets the
 # analyst read see any headlines there at all.
