@@ -16,14 +16,21 @@ from app.config import settings
 from app.core.sectors import Market
 from app.llm.select import any_llm_configured, select_model
 from app.market.fundamentals import YFinanceFundamentals
-from app.market.news import YFinanceNewsProvider
+from app.market.news import (
+    CombinedNewsProvider,
+    GoogleNewsRSSProvider,
+    YFinanceNewsProvider,
+)
 from app.services import dashboard_service
 from app.store import agent_repo
 
 log = logging.getLogger(__name__)
 
 _fundamentals = YFinanceFundamentals()
-_news = YFinanceNewsProvider()
+# Google News (keyless, works from cloud IPs) first, yfinance as a fallback: Explore runs on
+# a datacenter host where Yahoo's news endpoint is blocked, so Google is what lets the
+# analyst read see any headlines there at all.
+_news = CombinedNewsProvider([GoogleNewsRSSProvider(), YFinanceNewsProvider()])
 
 
 # --- Explore ------------------------------------------------------------------------
