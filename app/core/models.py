@@ -100,6 +100,10 @@ class StockRow:
     pnl: Decimal | None = None
     pnl_pct: Decimal | None = None
     stale_price: bool = False
+    # Company size, so "is this a small cap" is answerable at a glance rather than only
+    # when an agent warns. None when the provider gave us no market cap.
+    market_cap: Decimal | None = None
+    cap_class: str | None = None  # "large" | "mid" | "small"
 
 
 @dataclass(frozen=True)

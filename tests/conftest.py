@@ -19,6 +19,11 @@ TABLES = (
     "price_snapshots",
     "portfolio_snapshots",
     "insights",
+    "user_plans",
+    "reports",
+    "stock_analyses",
+    "explore_usage",
+    "briefings",
 )
 
 # This suite TRUNCATEs every table. Pointed at a real database it would silently destroy
@@ -42,6 +47,20 @@ def schema():
     create_all()
 
 
+@pytest.fixture(autouse=True)
+def _no_live_llm_keys(monkeypatch):
+    """Keep the suite hermetic. A real GROQ/ANTHROPIC key in .env must never make an agent
+    reach the network during tests: blank the keys on the cached Settings so
+    `select_model()` finds none unless a test injects a FakeModel explicitly. Reverted after
+    each test by monkeypatch."""
+    from app.config import settings
+
+    s = settings()
+    monkeypatch.setattr(s, "groq_api_key", "", raising=False)
+    monkeypatch.setattr(s, "gemini_api_key", "", raising=False)
+    monkeypatch.setattr(s, "anthropic_api_key", "", raising=False)
+
+
 @pytest.fixture
 def conn():
     """One transaction per test, rolled back afterwards, so tests cannot see each
@@ -56,18 +75,45 @@ class FakeProvider:
     """A provider that answers from a dict. Tests must never depend on Yahoo being up,
     or on what Reliance happens to be trading at today."""
 
-    def __init__(self, prices: dict[str, str] | None = None) -> None:
+    # A big default cap so `cap_class` classifies as large in tests; pass `caps` to
+    # override per ticker (e.g. to exercise the small-cap agent).
+    DEFAULT_CAP = Decimal("5000000000000")
+
+    def __init__(
+        self, prices: dict[str, str] | None = None, caps: dict[str, str] | None = None
+    ) -> None:
         self.prices = prices or {}
+        self.caps = caps or {}
         self.calls: list[tuple[Market, tuple[str, ...]]] = []
 
     def get_quotes(self, market: Market, tickers: Sequence[str]) -> dict[str, Quote]:
         self.calls.append((market, tuple(tickers)))
         now = datetime.now(UTC)
         return {
-            t: Quote(t, Decimal(self.prices[t]), now)
+            t: Quote(
+                t, Decimal(self.prices[t]), now,
+                market_cap=Decimal(self.caps.get(t, self.DEFAULT_CAP)),
+            )
             for t in tickers
             if t in self.prices
         }
+
+
+class FakeModel:
+    """Stands in for an AnalystModel. Returns a queued dict (or raises a queued error),
+    so tests exercise the agents without a network or a key."""
+
+    def __init__(self, name: str = "groq", replies=None):
+        self.name = name
+        self._replies = list(replies or [])
+        self.calls: list[tuple[str, str]] = []
+
+    def complete_json(self, system: str, user: str, *, max_tokens: int = 1500) -> dict:
+        self.calls.append((system, user))
+        reply = self._replies.pop(0) if self._replies else {}
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
 
 @pytest.fixture

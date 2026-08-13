@@ -8,8 +8,17 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import dashboard, insights, portfolio
+from app.api.routes import (
+    billing,
+    briefing,
+    dashboard,
+    explore,
+    insights,
+    portfolio,
+    report,
+)
 from app.config import settings
+from app.llm.select import any_llm_configured
 from app.store.db import create_all
 
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +37,10 @@ app = FastAPI(title="Portfolio Manager", version="1.0.0", lifespan=lifespan)
 app.include_router(portfolio.router)
 app.include_router(dashboard.router)
 app.include_router(insights.router)
+app.include_router(explore.router)
+app.include_router(report.router)
+app.include_router(billing.router)
+app.include_router(briefing.router)
 
 
 @app.get("/api/config")
@@ -38,6 +51,10 @@ def config() -> dict:
         "auth_enabled": settings().auth_enabled,
         "supabase_url": settings().supabase_url,
         "supabase_anon_key": settings().supabase_anon_key,
+        # So the UI can show/hide the LLM features and the billing controls without a
+        # separate round-trip.
+        "llm_enabled": any_llm_configured(),
+        "stripe_enabled": settings().stripe_enabled,
     }
 
 

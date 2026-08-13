@@ -28,6 +28,7 @@ from app.core.models import (
     Transaction,
     TxnType,
 )
+from app.core.market_cap import classify
 from app.core.sectors import Market, spec
 
 ZERO = Decimal(0)
@@ -158,6 +159,7 @@ def build_dashboard(
         else:
             unpriced.append(ticker)
 
+        market_cap = quote.market_cap if quote else None
         stocks.append(
             StockRow(
                 sno=0,  # assigned after sorting
@@ -172,6 +174,8 @@ def build_dashboard(
                 pnl=pnl,
                 pnl_pct=pnl_pct,
                 stale_price=bool(quote and quote.stale),
+                market_cap=market_cap,
+                cap_class=classify(market, market_cap),
             )
         )
 

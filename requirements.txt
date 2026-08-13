@@ -15,4 +15,14 @@ yfinance>=1.5.1
 pyjwt[crypto]==2.10.1
 httpx==0.28.1
 
+# LLM analyst + billing (phase 2). Groq needs no SDK — it speaks the OpenAI wire shape
+# over the httpx we already have.
+anthropic==0.69.0
+stripe==11.4.1
+
+# Hierarchical agent briefing (phase 3). LangGraph orchestrates the orchestrator ->
+# market -> sector graph; its nodes are plain functions that call our own AnalystModel
+# seam, so no langchain model packages are needed. Pins hold pydantic at 2.10.4.
+langgraph==1.2.9
+
 pytest==8.3.4

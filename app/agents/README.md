@@ -1,82 +1,79 @@
 # The agent layer
 
-**Empty on purpose.** Phase 1 built the dashboard; this is where phase 2 goes. Everything
-an agent needs already exists and is tested — this file is the contract, so that adding
-the first agent is writing one file, not refactoring the application.
+Phase 1 left this reserved; phase 2 built it. The contract it was designed around held:
+every agent reads through `services/` and writes via `repository` / `agent_repo`, and
+**none of it touches the frontend** — insights surface through the endpoint and panel that
+already existed.
 
-## The contract
+## What's here
 
-An agent is a peer of `api/`, `exporters/` and `jobs/`. It **reads through `services/`**
-and **writes rows to `insights`**. It does not touch SQL, and it does not touch the
-frontend.
+**Rule agents** — pure functions over a `DashboardView`, free, deterministic, no
+hallucination risk:
 
-```python
-from app.core.sectors import Market
-from app.services import dashboard_service
-from app.store import repository
-from app.store.db import connect
-
-def run(user_id: str, market: Market) -> None:
-    with connect() as conn:
-        view = dashboard_service.build(conn, user_id, market)
-
-        for sector in view.sectors:
-            if sector.allocation_pct > 25:
-                repository.add_insight(
-                    conn, user_id, market,
-                    severity="warning",
-                    title=f"{sector.sector} is {sector.allocation_pct}% of the portfolio",
-                    body="Above the 25% single-sector guideline. Consider trimming.",
-                    source="concentration-agent",
-                    related_sector=sector.sector,
-                )
-```
-
-That is the whole integration. The insight appears in the dashboard's Insights panel on
-the next page load — **no API change, no frontend change.** `GET /api/{market}/insights`
-and the panel that renders it were both built and tested in phase 1 against exactly this.
-
-## What phase 1 left you
-
-| You need | It is already there |
+| Agent | Fires on |
 |---|---|
-| Current holdings, allocation, P/L | `dashboard_service.build(conn, user_id, market) -> DashboardView` |
-| **Allocation drift over time** | `portfolio_snapshots` — written daily by `jobs/daily_refresh.py`, with `sector_allocations` as `{sector: pct}` so you can diff two dates without replaying the ledger |
-| Price history | `price_snapshots` — one row per ticker per day |
-| Full transaction history | `repository.get_transactions()` — an append-only ledger, never mutated |
-| Market cap (for the "small caps < 5%" rule) | `price_snapshots.market_cap`, already being captured |
-| A place to publish findings | `repository.add_insight()` + a live endpoint + a UI panel |
+| `concentration.py` | a stock > 10%/20% or a sector > 25%/40% of invested |
+| `small_cap.py` | small caps > 5% (the doc's rule) / 10%, using `StockRow.cap_class` |
+| `drift.py` | a sector's allocation moved ≥ 5 points vs a ~week-ago snapshot |
 
-**The snapshots are the thing to understand.** They are collected from day one *for you* —
-"has my IT exposure drifted?" is unanswerable without a time series, and a day that goes
-uncaptured cannot be recovered later. By the time the first agent runs, there should
-already be months of history sitting in `portfolio_snapshots`.
+**LLM agents** — one bounded JSON call each, behind the `AnalystModel` protocol:
 
-## Why the maths is pure Python and not SQL
+| Agent | Does |
+|---|---|
+| `analyst.py` | maps recent headlines to specific holdings → news insights |
+| `explorer.py` | reads one ticker's fundamental ratios (the Explore tab) |
+| `health_report.py` | a weekly score + narrative + red-flag checklist |
 
-`core/calculations.py` has no I/O. `build_dashboard()` takes positions, instruments and
-quotes as plain arguments, which means an agent can run the **real** allocation maths over
-a **hypothetical** portfolio:
+**`runner.py`** publishes with dedupe: rule insights are *reconciled* (upsert what's true,
+delete what cleared, keep dismissed rows dismissed); analyst insights are *aged out* after
+a week. This is what stops a nightly rerun from stacking duplicates.
 
-```python
-from app.core.calculations import build_dashboard, build_positions
+## The two-provider seam
 
-# "What happens to my sector balance if I exit Infosys?"
-hypothetical = {t: p for t, p in positions.items() if t != "INFY"}
-after = build_dashboard(market, hypothetical, instruments, quotes)
-```
+`app/llm/` mirrors `app/market/base.py`: a `complete_json` protocol with two
+implementations — `openai_compat.py` (Groq, the free tier) and `claude.py` (premium).
+`select.py` picks per the user's plan and which keys exist. No key → the rule agents still
+run and the LLM tabs say "set a key". Adding a third provider is one class.
 
-Computing allocation with a `GROUP BY` would have been simpler and would have made this
-impossible. It was written this way for this.
+## Where the maths still pays off
 
-## Adding a new data source
+`core/calculations.py` stays pure, so an agent can run the real allocation maths over a
+*hypothetical* portfolio — the phase-1 promise, now used by `health_report` and available
+to any future rebalancing agent. Company-size classification lives in `core/market_cap.py`
+for the same reason: `small_cap.py`, the Stocks table, and the report all read one answer.
 
-Agents will want news, filings, fundamentals. Follow `market/base.py`: define a Protocol,
-implement it, and inject it — the same shape that lets `YFinanceProvider` be swapped for a
-paid feed without the dashboard noticing.
+## Phase 3: the hierarchical briefing (`briefing/`)
 
-## Where a scheduler goes
+A second, deeper agent shape sits alongside the flat phase-2 agents: a three-level
+**orchestrator → market → sector** hierarchy, wired with **LangGraph**, that produces the
+weekly **Briefing** — for each development, *what happened*, *what it indicates*, and a
+positive / negative / neutral **direction** (the phase-2 insights only ever warn).
 
-`jobs/daily_refresh.py` is the model. Add `jobs/run_agents.py`, and extend
-`.github/workflows/daily.yml` to call it after the refresh — the snapshot must be written
-before the agents read it.
+| Level | File | Does |
+|---|---|---|
+| Sector | `briefing/sector_agent.py` | one specialist per held sector — pulls its own news + ratios, reasons through a sector-specific lens (`briefing/lenses.py`) → a `SectorFinding` |
+| Market | `briefing/market_agent.py` | reads its sectors' findings and reasons *across* them (shared drivers) → a `MarketBrief` |
+| Orchestrator | `briefing/orchestrator.py` | reads both market briefs, reasons across markets → the `Briefing` (headline, direction, positives, negatives) |
+
+**LangGraph, not LangChain.** The graph (`briefing/graph.py`, the only LangGraph-aware
+file) is two `Send` fan-out layers — one per held sector, then one per market — joined by a
+`gather` node; the parallel branches append to `operator.add` state channels. But the nodes
+are plain functions that call our own `AnalystModel.complete_json` seam, so no LangChain
+model packages are pulled in and the whole graph is testable offline with `FakeModel`. The
+reasoning lives in the pure `analyze` / `synthesize` functions; `graph.py` only wires them.
+
+**Fan-out is bounded** (top-N held sectors per market) because a full run is one LLM call
+per sector + per market + the orchestrator. It runs **weekly** (the Monday cron) and
+**on-demand** (cooldown-guarded), never nightly. Every node degrades to a deterministic
+reading (direction from P/L) if there's no model or a call fails, so one rate-limited or
+failed agent costs its own card, never the briefing — the same stale-price philosophy.
+Groq's free tier is TPM-capped, so `OpenAICompatModel` honours a 429 `Retry-After` with a
+bounded backoff before falling back.
+
+## What's still open (phase 4 candidates)
+
+Rebalancing *recommendations* ("sell X, buy Y"), backtesting, editable thresholds, and a
+bidirectional clarification loop (the orchestrator re-dispatching a sector with a follow-up
+question — LangGraph makes this a natural extension of the existing graph). The scheduler
+already exists — `/api/refresh` runs the rule + analyst agents nightly, the health report
+and the hierarchical briefing weekly (Monday), per user.

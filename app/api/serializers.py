@@ -32,6 +32,8 @@ def _stock(row: StockRow) -> dict:
         "pnl_pct": money(row.pnl_pct),
         "allocation_pct": money(row.allocation_pct),
         "stale_price": row.stale_price,
+        "market_cap": money(row.market_cap),
+        "cap_class": row.cap_class,
     }
 
 

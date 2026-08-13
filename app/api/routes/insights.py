@@ -1,17 +1,17 @@
-"""The agent layer's front door.
+"""The agent layer's front door: read insights, dismiss one.
 
-This returns [] today and will keep returning [] until an agent writes to the insights
-table. It exists now, wired end to end and rendered by the UI, so that shipping the
-first agent is a matter of writing rows -- not of touching the API or the frontend.
+The GET was live and empty through phase 1; now the agents write rows and they appear
+with no change here. The dismiss endpoint is owner-scoped in the repository — one user
+cannot dismiss another's insight even by guessing the id.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.supabase_jwt import current_user
 from app.core.sectors import Market
-from app.store import repository
+from app.store import agent_repo, repository
 from app.store.db import connect
 
 router = APIRouter(prefix="/api", tags=["insights"])
@@ -34,3 +34,14 @@ def insights(market: Market, user_id: str = Depends(current_user)):
         }
         for r in rows
     ]
+
+
+@router.post("/insights/{insight_id}/dismiss")
+def dismiss(insight_id: int, user_id: str = Depends(current_user)):
+    with connect() as conn:
+        ok = agent_repo.dismiss_insight(conn, user_id, insight_id)
+    if not ok:
+        # Either it doesn't exist or it isn't this user's — same 404 either way, so a
+        # probe can't distinguish "not yours" from "not found".
+        raise HTTPException(404, "insight not found")
+    return {"ok": True}

@@ -3,103 +3,230 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Portfolio Manager</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+  <!-- Stamp the saved theme before first paint, or a dark-theme user gets a white flash
+       on every load. Everything else about theming lives in app.js. -->
+  <script>
+    (function () {
+      var t = localStorage.getItem("theme");
+      if (t) document.documentElement.dataset.theme = t;
+    })();
+  </script>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <!-- Ambient aurora: three blurred colour fields behind the glass. anime.js drifts
+       them (see fx.js); with no JS they sit still and still read as intentional. -->
+  <div class="aurora" aria-hidden="true">
+    <span class="blob b1"></span>
+    <span class="blob b2"></span>
+    <span class="blob b3"></span>
+  </div>
+
   <div class="wrap">
-    <header>
-      <h1>Portfolio <span id="market-label">—</span></h1>
+    <header data-reveal style="--i:0">
+      <div class="brand">
+        <h1>Portfolio <span id="market-label">—</span></h1>
+        <!-- Live exchange clock: the one piece of chrome a market app can justify. -->
+        <div class="clock" id="clock" aria-live="off"></div>
+      </div>
       <div class="spacer"></div>
+      <!-- Plan badge: hidden until /api/config says auth is on and a plan is known. -->
+      <button class="plan-chip" id="plan-chip" hidden></button>
       <div class="toggle" id="market-toggle" role="group" aria-label="Market"></div>
       <button class="action" id="refresh">Refresh prices</button>
-      <button class="action" id="export">Export .xlsx</button>
+      <button class="action" id="export">Export .xlsx ↓</button>
+      <button class="action icon" id="theme" aria-label="Toggle theme">☾</button>
     </header>
 
     <div id="notices"></div>
 
-    <section class="kpis" id="kpis"></section>
+    <section class="bento" id="hero" data-reveal style="--i:1"></section>
 
-    <section class="charts">
-      <div class="card">
-        <h2>Sector allocation</h2>
-        <p class="empty" style="margin:-8px 0 12px">Share of invested amount — cost basis, not market value.</p>
-        <div id="chart-allocation"></div>
-      </div>
-      <div class="card">
-        <h2>Profit / loss by sector</h2>
-        <div class="legend">
-          <span><i style="background:var(--gain)"></i>Gain</span>
-          <span><i style="background:var(--loss)"></i>Loss</span>
-        </div>
-        <div id="chart-pnl"></div>
-      </div>
-    </section>
+    <nav class="tabs" role="tablist" aria-label="Sections" data-reveal style="--i:2">
+      <button role="tab" id="tab-overview" aria-selected="true"><span class="idx">01</span>Overview</button>
+      <button role="tab" id="tab-stocks" aria-selected="false"><span class="idx">02</span>Stocks</button>
+      <button role="tab" id="tab-sectors" aria-selected="false"><span class="idx">03</span>Sectors</button>
+      <button role="tab" id="tab-explore" aria-selected="false"><span class="idx">04</span>Explore</button>
+      <button role="tab" id="tab-report" aria-selected="false"><span class="idx">05</span>Report</button>
+      <button role="tab" id="tab-briefing" aria-selected="false"><span class="idx">06</span>Briefing</button>
+      <button role="tab" id="tab-manage" aria-selected="false"><span class="idx">07</span>Manage</button>
+    </nav>
 
-    <!-- The agent layer's landing spot. Renders empty until an agent writes a row. -->
-    <section class="card">
-      <h2>Insights</h2>
-      <div id="insights"></div>
-    </section>
-
-    <section class="card">
-      <h2>Stock allocation</h2>
-      <div class="scroll"><table id="stocks"></table></div>
-    </section>
-
-    <section class="card">
-      <h2>Sector allocation</h2>
-      <div class="scroll"><table id="sectors"></table></div>
-    </section>
-
-    <section class="card">
-      <h2>Manage holdings</h2>
-      <div class="controls">
-        <div class="field">
-          <label for="upload-file">Upload holdings (.xlsx or broker .csv)</label>
-          <input type="file" id="upload-file" accept=".xlsx,.csv">
-          <div class="radio">
-            <label><input type="radio" name="mode" value="append" checked> Add to portfolio</label>
-            <label><input type="radio" name="mode" value="replace"> Replace portfolio</label>
+    <main data-reveal style="--i:3">
+      <section id="panel-overview" role="tabpanel" class="panel">
+        <div class="charts">
+          <div class="card">
+            <h2><span class="idx">01.1</span>Sector allocation</h2>
+            <p class="hint">Share of invested amount — cost basis, not market value.</p>
+            <div id="chart-allocation"></div>
           </div>
-          <!-- Only OUR template carries the market, in its sheet names. Any other file
-               -- a broker CSV or a broker .xlsx -- says nothing about it, so it has to be
-               chosen here. Ignored when the file does say. -->
-          <div class="radio" id="csv-market" hidden>
-            <span class="dim">Market (used if the file doesn't say):</span>
-            <label><input type="radio" name="market" value="INDIA" checked> India</label>
-            <label><input type="radio" name="market" value="US"> US</label>
-          </div>
-          <div class="radio">
-            <label title="Off by default: a typo left to itself becomes an industry, and splits your allocation in two.">
-              <input type="checkbox" id="keep-sectors"> Keep unrecognised sector names (default: file under Others)
-            </label>
+          <div class="card">
+            <h2><span class="idx">01.2</span>Profit / loss by sector</h2>
+            <div class="legend">
+              <span><i style="background:var(--gain)"></i>Gain</span>
+              <span><i style="background:var(--loss)"></i>Loss</span>
+            </div>
+            <div id="chart-pnl"></div>
           </div>
         </div>
-        <button class="action" id="upload-go">Upload</button>
-
-        <div class="field">
-          <label for="delete-file">Remove holdings</label>
-          <input type="file" id="delete-file" accept=".xlsx">
-        </div>
-        <button class="action" id="delete-go">Remove</button>
-
-        <div class="spacer"></div>
-        <div class="field">
-          <label>Start here</label>
-          <div class="links">
-            <a href="/api/portfolio/template?kind=blank">Download blank template ↓</a>
-            <a href="/api/portfolio/template?kind=sample">Download filled sample ↓</a>
+        <!-- The agent layer's landing spot. Rule agents fill it; the button asks the
+             LLM analyst for a news-driven read on top. -->
+        <section class="card">
+          <div class="card-head">
+            <h2><span class="idx">01.3</span>Insights</h2>
+            <button class="action small" id="analyze">Analyze now</button>
           </div>
-        </div>
-      </div>
-      <div id="upload-result"></div>
-    </section>
+          <div id="insights"></div>
+        </section>
+      </section>
+
+      <section id="panel-stocks" role="tabpanel" class="panel" hidden>
+        <section class="card">
+          <h2><span class="idx">02</span>Stock allocation</h2>
+          <div class="scroll"><table id="stocks"></table></div>
+        </section>
+      </section>
+
+      <section id="panel-sectors" role="tabpanel" class="panel" hidden>
+        <section class="card">
+          <h2><span class="idx">03</span>Sector allocation</h2>
+          <div class="scroll"><table id="sectors"></table></div>
+        </section>
+      </section>
+
+      <section id="panel-explore" role="tabpanel" class="panel" hidden>
+        <section class="card">
+          <h2><span class="idx">04</span>Explore a stock</h2>
+          <p class="hint">Look up any ticker — held or not — and get its fundamentals with an analyst's read.</p>
+          <form class="explore-bar" id="explore-form">
+            <input id="explore-ticker" placeholder="Ticker (e.g. RELIANCE, AAPL)" autocomplete="off" aria-label="Ticker">
+            <div class="toggle" id="explore-market" role="group" aria-label="Market"></div>
+            <button class="action primary" id="explore-go" type="submit">Analyze</button>
+          </form>
+          <div class="explore-usage dim" id="explore-usage"></div>
+          <div id="explore-result"></div>
+        </section>
+      </section>
+
+      <section id="panel-report" role="tabpanel" class="panel" hidden>
+        <section class="card">
+          <div class="card-head">
+            <h2><span class="idx">05</span>Weekly health report</h2>
+            <button class="action small" id="report-go">Generate report</button>
+          </div>
+          <div id="report-result"></div>
+        </section>
+      </section>
+
+      <section id="panel-briefing" role="tabpanel" class="panel" hidden>
+        <section class="card">
+          <div class="card-head">
+            <h2><span class="idx">06</span>Portfolio briefing</h2>
+            <button class="action small" id="briefing-go">Generate briefing</button>
+          </div>
+          <p class="hint">A team of agents — an orchestrator over per-market agents over per-sector
+            specialists — reads what moved across your holdings and reports what happened, what it
+            indicates, and whether it's working for or against you. Runs weekly; regenerate any time.</p>
+          <div id="briefing-result"></div>
+        </section>
+      </section>
+
+      <section id="panel-manage" role="tabpanel" class="panel" hidden>
+        <section class="card">
+          <h2><span class="idx">07</span>Manage holdings</h2>
+          <!-- One entry point. Every question moves to the dialog that opens after a
+               file is chosen -- the form stops looking like a cockpit. -->
+          <div class="dropzone" id="dropzone" role="button" tabindex="0"
+               aria-label="Upload a holdings file">
+            <strong>Drop your holdings file here</strong>
+            <span>or click to browse — .xlsx template or broker .csv</span>
+          </div>
+          <div class="manage-actions">
+            <button class="linkish" id="remove-open">Remove holdings…</button>
+            <span class="dim">·</span>
+            <a href="/api/portfolio/template?kind=blank">Blank template ↓</a>
+            <a href="/api/portfolio/template?kind=sample">Filled sample ↓</a>
+          </div>
+          <div id="upload-result"></div>
+        </section>
+
+        <!-- Membership. Only meaningful when auth is on; hidden otherwise so single-user
+             local dev isn't cluttered by a plan nobody chose. -->
+        <section class="card" id="membership-card" hidden>
+          <h2><span class="idx">06.1</span>Membership</h2>
+          <div class="membership" id="membership"></div>
+        </section>
+      </section>
+    </main>
 
     <footer id="stamp"></footer>
   </div>
 
-  <div class="tip" id="tip"></div>
+  <!-- Hidden pickers; the dropzone and the Remove link drive them. -->
+  <input type="file" id="file-up" accept=".xlsx,.csv" hidden>
+  <input type="file" id="file-rm" accept=".xlsx" hidden>
+
+  <!-- The one dialog. Choosing a file opens it; it asks only what the file can't say. -->
+  <dialog id="up-dialog">
+    <h3 id="dlg-title">Upload holdings</h3>
+    <p class="dlg-file" id="dlg-file"></p>
+
+    <div id="dlg-questions">
+      <div class="opt-group">
+        <div class="opt-label">Market <span class="dim">— ignored if the file is our template</span></div>
+        <div class="opts">
+          <label class="opt">
+            <input type="radio" name="dlg-market" value="INDIA" checked>
+            <strong>India</strong><small>NSE · ₹</small>
+          </label>
+          <label class="opt">
+            <input type="radio" name="dlg-market" value="US">
+            <strong>United States</strong><small>NYSE / NASDAQ · $</small>
+          </label>
+        </div>
+      </div>
+
+      <div class="opt-group">
+        <div class="opt-label">How to apply it</div>
+        <div class="opts">
+          <label class="opt">
+            <input type="radio" name="dlg-mode" value="append" checked>
+            <strong>Add</strong><small>append to what you hold</small>
+          </label>
+          <label class="opt">
+            <input type="radio" name="dlg-mode" value="replace">
+            <strong>Replace</strong><small>reload the markets in this file</small>
+          </label>
+        </div>
+      </div>
+
+      <label class="dlg-check">
+        <input type="checkbox" id="dlg-keep">
+        Keep unrecognised sector names <span class="dim">(otherwise they file under Others)</span>
+      </label>
+    </div>
+
+    <div id="dlg-errors"></div>
+
+    <div class="dlg-foot">
+      <button class="action" id="dlg-cancel">Cancel</button>
+      <button class="action primary" id="dlg-confirm">Upload</button>
+    </div>
+  </dialog>
+
+  <div class="tip" id="tip" role="status"></div>
+
+  <!-- Animation libraries, vendored locally (no CDN at runtime, no build step):
+       anime.js v4 -> window.anime (ambient aurora + entrance stagger),
+       Motion       -> window.Motion (spring reveals, magnetic + tilt interactions).
+       app.js is the app; fx.js is a purely-additive polish layer that degrades to
+       "the restyled page with no motion" if either library fails to load. -->
+  <script src="/static/vendor/anime.min.js"></script>
+  <script src="/static/vendor/motion.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/fx.js"></script>
 </body>
 </html>
