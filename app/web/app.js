@@ -1085,7 +1085,12 @@ function renderAuth(mode = "signin") {
 
   submit.onclick = go;
   [email, password].forEach((input) => {
-    input.onkeydown = (e) => e.key === "Enter" && go();
+    // Only act on Enter. Returning the bare `&&` expression here would hand back `false`
+    // for every other key, which a DOM0 handler treats as preventDefault() — silently
+    // swallowing the keystroke so nothing can be typed. Keep it statement-bodied.
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") go();
+    };
     card.appendChild(input);
   });
   card.appendChild(submit);
