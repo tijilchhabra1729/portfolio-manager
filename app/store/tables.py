@@ -199,3 +199,18 @@ briefings = Table(
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     UniqueConstraint("user_id", "period_start", name="uq_briefing_week"),
 )
+
+# The two numbers the ledger cannot derive, entered by the user per market: how much they
+# have set aside to invest (so cash position = investable - invested) and any income from
+# options premiums (folded into net P&L). One row per user per market.
+portfolio_settings = Table(
+    "portfolio_settings",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("user_id", String(64), nullable=False),
+    Column("market", String(8), nullable=False),
+    Column("total_investable", AMOUNT),
+    Column("options_income", AMOUNT, nullable=False, server_default="0"),
+    Column("updated_at", DateTime(timezone=True), server_default=func.now()),
+    UniqueConstraint("user_id", "market", name="uq_portfolio_settings"),
+)

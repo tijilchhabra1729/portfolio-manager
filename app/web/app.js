@@ -53,7 +53,11 @@ function signed(value, digits = 0) {
 const pct = (value) => (num(value) === null ? "—" : `${num(value).toFixed(2)}%`);
 const signedPct = (value) => {
   const n = num(value);
-  return n === null ? "—" : `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}%`;
+  if (n === null) return "—";
+  const magnitude = Math.abs(n).toFixed(2);
+  // A value that rounds to zero carries no sign: "+0.00%" beside a small loss reads wrong.
+  const sign = magnitude === "0.00" ? "" : n >= 0 ? "+" : "−";
+  return `${sign}${magnitude}%`;
 };
 const cls = (value) => {
   const n = num(value);
@@ -163,7 +167,7 @@ function wireTabs() {
   for (const t of TABS) $(`tab-${t}`).onclick = () => setTab(t);
   addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.target.closest("input, textarea, select") || $("up-dialog").open) return;
+    if (e.target.closest("input, textarea, select") || document.querySelector("dialog[open]")) return;
     const i = Number(e.key) - 1;
     if (i >= 0 && i < TABS.length) setTab(TABS[i]);
   });
@@ -412,7 +416,7 @@ const CAP_LABEL = { large: "Large cap", mid: "Mid cap", small: "Small cap" };
 function stocksTable(view) {
   table(
     $("stocks"),
-    ["Sno", "Stock", "Sector", "Size", "Units", "Invested", "Market value", "P/L", "P/L %", "Allocation %"],
+    ["Sno", "Stock", "Sector", "Size", "Qty", "Avg buy", "LTP", "Invested", "Market value", "P/L", "P/L %", "Allocation %", "Day"],
     view.stocks,
     (r) => {
       const tr = el("tr");
@@ -436,6 +440,10 @@ function stocksTable(view) {
       tr.appendChild(size);
 
       tr.appendChild(el("td", null, r.units));
+      // Average buy price of what's still held (FIFO cost basis / units) and the last
+      // traded price it's being marked against.
+      tr.appendChild(el("td", null, r.avg_cost === null ? "—" : money(r.avg_cost, 2)));
+      tr.appendChild(el("td", r.price === null ? "dim" : null, r.price === null ? "—" : money(r.price, 2)));
       tr.appendChild(el("td", null, money(r.invested, 2)));
 
       const mv = el("td");
@@ -453,6 +461,9 @@ function stocksTable(view) {
       const alloc = el("td");
       alloc.appendChild(meter(r.allocation_pct, r.sno));
       tr.appendChild(alloc);
+
+      // The day's move against the previous close; a dash until there is one to compare.
+      tr.appendChild(el("td", cls(r.day_change_pct), signedPct(r.day_change_pct)));
       return tr;
     }
   );
@@ -573,6 +584,247 @@ function renderHero(view) {
   host.appendChild(donutTile());
   heroStats(view).forEach((t) => host.appendChild(t));
   // The donut SVG itself is drawn by renderCharts, so a resize re-measures it.
+}
+
+/* --- P&L metrics + cash position -------------------------------------------
+ * The fuller picture the hero can't carry. Every % is against invested; net = realised +
+ * unrealised + options income; cash = investable − invested, and cash % is against the
+ * investable pot. A zero reads as neutral rather than as a gain. */
+
+const tone = (value) => (num(value) ? cls(value) : "dim");
+
+function metricTile(label, value, pctValue, klass, sub) {
+  const tile = el("div", "metric");
+  tile.appendChild(el("div", "label", label));
+  tile.appendChild(el("div", `value ${klass || ""}`, value));
+  if (pctValue !== undefined && pctValue !== null) {
+    tile.appendChild(el("span", `pct-chip ${klass || ""}`, signedPct(pctValue)));
+  } else if (sub) {
+    tile.appendChild(el("div", "sub", sub));
+  }
+  return tile;
+}
+
+function renderMetrics(view) {
+  const host = $("metrics");
+  if (!host) return;
+  host.innerHTML = "";
+  const t = view.totals;
+  const dash = (v, fmt) => (v === null || v === undefined ? "—" : fmt(v));
+  host.appendChild(metricTile("Invested", money(t.invested, 2)));
+  host.appendChild(metricTile("Current", dash(t.market_value, (v) => money(v, 2))));
+  host.appendChild(metricTile("Options income", signed(t.options_income, 2), t.options_income_pct, tone(t.options_income)));
+  host.appendChild(metricTile("Realised P&L", signed(t.realised_pnl, 2), t.realised_pnl_pct, tone(t.realised_pnl)));
+  host.appendChild(metricTile("Unrealised P&L", dash(t.pnl, (v) => signed(v, 2)), t.pnl_pct, tone(t.pnl)));
+  host.appendChild(metricTile("Net P&L", dash(t.net_pnl, (v) => signed(v, 2)), t.net_pnl_pct, tone(t.net_pnl)));
+}
+
+function renderCash(view) {
+  const host = $("cash");
+  const bar = $("cash-bar");
+  if (!host) return;
+  host.innerHTML = "";
+  bar.innerHTML = "";
+  const t = view.totals;
+  if (t.investable === null) {
+    host.appendChild(el("p", "empty", "Set your total investable amount (Edit) to see your cash position."));
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  host.appendChild(metricTile("Total investable amount", money(t.investable, 2)));
+  host.appendChild(metricTile("Cash position", signed(t.cash, 2), null, tone(t.cash), "Total investable − invested"));
+  host.appendChild(metricTile("Cash position (as % of investable)", signedPct(t.cash_pct), null, tone(t.cash_pct), "(Cash ÷ investable) × 100"));
+
+  // Invested vs cash as shares of the pot. Over-invested (cash < 0) fills the bar with
+  // invested and turns it the loss colour, so the overshoot is visible at a glance.
+  const investable = num(t.investable);
+  const investedShare = investable > 0 ? Math.min(100, (num(t.invested) / investable) * 100) : 0;
+  const invested = el("span", "seg invested");
+  invested.style.width = `${investedShare}%`;
+  invested.title = `Invested ${investedShare.toFixed(1)}% of the pot`;
+  const cash = el("span", "seg cash");
+  cash.style.width = `${Math.max(0, 100 - investedShare)}%`;
+  cash.title = `Cash ${Math.max(0, 100 - investedShare).toFixed(1)}%`;
+  bar.appendChild(invested);
+  bar.appendChild(cash);
+  bar.classList.toggle("over", num(t.cash) < 0);
+}
+
+/* --- Recent buy & sell: the ledger read back, newest first ------------------- */
+
+const KIND = {
+  buy: { cls: "buy", verb: "Bought" },
+  sell: { cls: "sell", verb: "Sold" },
+  removed: { cls: "removed", verb: "Removed" },
+};
+
+async function loadTrades() {
+  const host = $("trades");
+  if (!host) return;
+  try {
+    renderTrades(await api(`/api/${S.market}/trades?limit=10`));
+  } catch (e) {
+    host.innerHTML = "";
+    host.appendChild(el("div", "banner bad", e.detail || e.message));
+  }
+}
+
+function renderTrades(rows) {
+  const host = $("trades");
+  host.innerHTML = "";
+  if (!rows.length) {
+    host.appendChild(el("p", "empty", "No trades recorded yet. Hit “Record trade” to log a buy or a sell."));
+    return;
+  }
+  rows.forEach((r, i) => {
+    const k = KIND[r.kind] || KIND.buy;
+    const card = el("div", `trade ${k.cls}`);
+    card.style.setProperty("--i", i);
+    card.appendChild(el("div", "avatar", r.ticker.slice(0, 4)));
+
+    const body = el("div", "trade-body");
+    const head = el("div", "trade-head");
+    head.appendChild(el("strong", null, r.ticker));
+    head.appendChild(el("span", "dim", fmtDate(r.date)));
+    body.appendChild(head);
+
+    const line = el("p", "trade-line");
+    const text = (s) => line.appendChild(document.createTextNode(s));
+    line.appendChild(el("b", null, `${k.verb} ${r.units}`));
+    text(` shares of ${r.name} (${r.ticker})`);
+    if (r.price !== null) {
+      text(" at an average price of ");
+      line.appendChild(el("b", null, money(r.price, 2)));
+      text(" per share.");
+    } else {
+      text(" — no price was recorded.");
+    }
+    text(" Total allocation changed to ");
+    line.appendChild(el("b", null, pct(r.allocation_pct)));
+    text(".");
+    body.appendChild(line);
+
+    if (r.realised_gain !== null) {
+      body.appendChild(el("div", `trade-gain ${cls(r.realised_gain)}`, `Realised ${signed(r.realised_gain, 2)}`));
+    }
+    card.appendChild(body);
+    host.appendChild(card);
+  });
+}
+
+function fmtDate(iso) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, {
+    day: "2-digit", month: "2-digit", year: "numeric",
+  });
+}
+
+/* --- Record a trade ---------------------------------------------------------- */
+
+function openTradeDialog() {
+  const label = S.view ? `${S.view.label} · ${S.view.currency}` : S.market;
+  $("trade-market").textContent = label;
+  $("trade-form").reset();
+  $("trade-date").value = new Date().toISOString().slice(0, 10);
+  $("trade-errors").innerHTML = "";
+  $("trade-new").hidden = true;
+  // Offer this market's sector taxonomy for a ticker we haven't seen.
+  const list = $("sector-list");
+  list.innerHTML = "";
+  const m = S.markets.find((x) => x.code === S.market);
+  ((m && m.sectors) || []).forEach((s) => {
+    const o = el("option");
+    o.value = s;
+    list.appendChild(o);
+  });
+  $("trade-dialog").showModal();
+  $("trade-ticker").focus();
+}
+
+// Name + sector matter only for a buy of a ticker not yet held.
+function syncTradeNewFields() {
+  const ticker = $("trade-ticker").value.trim().toUpperCase();
+  const side = document.querySelector('input[name="trade-side"]:checked').value;
+  const held = !!(S.view && S.view.stocks.some((s) => s.ticker === ticker));
+  $("trade-new").hidden = !(ticker && side === "BUY" && !held);
+}
+
+async function submitTrade(e) {
+  e.preventDefault();
+  const btn = $("trade-confirm");
+  const errors = $("trade-errors");
+  errors.innerHTML = "";
+  const body = {
+    ticker: $("trade-ticker").value.trim().toUpperCase(),
+    side: document.querySelector('input[name="trade-side"]:checked').value,
+    units: $("trade-units").value,
+    price: $("trade-price").value,
+    date: $("trade-date").value,
+    name: $("trade-name").value.trim() || null,
+    sector: $("trade-sector").value.trim() || null,
+  };
+  btn.disabled = true;
+  btn.classList.add("busy");
+  try {
+    const r = await api(`/api/${S.market}/trades`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    $("trade-dialog").close();
+    await load();
+    toast(`${r.side === "BUY" ? "Bought" : "Sold"} ${r.units} ${r.ticker} — its allocation is now ${pct(r.allocation_pct)}.`);
+  } catch (err) {
+    // Keep the dialog open with the reason: fix the field and try again.
+    renderIssues(errors, [{ message: err.detail || err.message || "Couldn't record the trade." }]);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("busy");
+  }
+}
+
+/* --- Cash position settings ------------------------------------------------- */
+
+async function openSettings() {
+  $("settings-market").textContent = S.view ? `${S.view.label} · ${S.view.currency}` : S.market;
+  $("settings-errors").innerHTML = "";
+  try {
+    const s = await api(`/api/${S.market}/settings`);
+    $("settings-investable").value = s.total_investable === null ? "" : s.total_investable;
+    $("settings-options").value = s.options_income;
+  } catch {
+    // Leave the fields as they are; saving still works.
+  }
+  $("settings-dialog").showModal();
+  $("settings-investable").focus();
+}
+
+async function saveSettings(e) {
+  e.preventDefault();
+  const btn = $("settings-confirm");
+  const errors = $("settings-errors");
+  errors.innerHTML = "";
+  const investable = $("settings-investable").value.trim();
+  const options = $("settings-options").value.trim();
+  const body = {};
+  if (investable !== "") body.total_investable = investable;
+  if (options !== "") body.options_income = options;
+  btn.disabled = true;
+  btn.classList.add("busy");
+  try {
+    await api(`/api/${S.market}/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    $("settings-dialog").close();
+    load();
+  } catch (err) {
+    renderIssues(errors, [{ message: err.detail || err.message || "Couldn't save." }]);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("busy");
+  }
 }
 
 /* The allocation donut: top sectors + "Others", each arc drawn in with anime.js
@@ -954,10 +1206,13 @@ async function load(refresh = false) {
     $("market-label").textContent = `· ${S.view.label}`;
     notices(S.view);
     renderHero(S.view);
+    renderMetrics(S.view);
+    renderCash(S.view);
     renderCharts(true);
     stocksTable(S.view);
     sectorsTable(S.view);
     await insights();
+    await loadTrades();
     $("stamp").textContent = `prices as of ${new Date(S.view.generated_at).toLocaleString()} · allocation % is computed on invested amount, not market value`;
   } catch (e) {
     if (e.message !== "Signed out") {
@@ -1532,6 +1787,16 @@ async function boot() {
   $("analyze").onclick = analyzeNow;
   $("report-go").onclick = generateReport;
   $("briefing-go").onclick = generateBriefing;
+
+  // Trades + the cash-position settings.
+  $("trade-open").onclick = openTradeDialog;
+  $("trade-cancel").onclick = () => $("trade-dialog").close();
+  $("trade-form").onsubmit = submitTrade;
+  $("trade-ticker").oninput = syncTradeNewFields;
+  document.querySelectorAll('input[name="trade-side"]').forEach((r) => (r.onchange = syncTradeNewFields));
+  $("settings-open").onclick = openSettings;
+  $("settings-cancel").onclick = () => $("settings-dialog").close();
+  $("settings-form").onsubmit = saveSettings;
   EXP.market = S.market;
   exploreMarketToggle();
   $("explore-form").onsubmit = (e) => {

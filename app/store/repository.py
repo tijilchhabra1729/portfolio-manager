@@ -20,6 +20,7 @@ from app.core.sectors import Market
 from app.store.tables import (
     insights,
     instruments,
+    portfolio_settings,
     portfolio_snapshots,
     price_snapshots,
     transactions,
@@ -314,3 +315,76 @@ def add_insight(
             related_sector=related_sector,
         )
     )
+
+
+# --- Portfolio settings (the numbers the ledger can't derive) -----------------------
+
+
+def get_settings(conn: Connection, user_id: str, market: Market) -> dict | None:
+    row = (
+        conn.execute(
+            select(portfolio_settings).where(
+                portfolio_settings.c.user_id == user_id,
+                portfolio_settings.c.market == market.value,
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return dict(row) if row else None
+
+
+def upsert_settings(
+    conn: Connection,
+    user_id: str,
+    market: Market,
+    *,
+    total_investable: Decimal | None,
+    options_income: Decimal,
+) -> None:
+    statement = insert(portfolio_settings).values(
+        user_id=user_id,
+        market=market.value,
+        total_investable=total_investable,
+        options_income=options_income,
+        updated_at=datetime.now(),
+    )
+    conn.execute(
+        statement.on_conflict_do_update(
+            constraint="uq_portfolio_settings",
+            set_={
+                "total_investable": statement.excluded.total_investable,
+                "options_income": statement.excluded.options_income,
+                "updated_at": statement.excluded.updated_at,
+            },
+        )
+    )
+
+
+def previous_closes(
+    conn: Connection, market: Market, tickers: Sequence[str], before: date
+) -> dict[str, Decimal]:
+    """The newest stored price per ticker from any day strictly before `before` -- the
+    baseline for a day-change figure. Empty for a ticker with no earlier snapshot."""
+    if not tickers:
+        return {}
+    rows = conn.execute(
+        select(price_snapshots.c.ticker, price_snapshots.c.price)
+        .where(
+            price_snapshots.c.market == market.value,
+            price_snapshots.c.ticker.in_(tickers),
+            price_snapshots.c.captured_on < before,
+        )
+        .order_by(
+            price_snapshots.c.ticker,
+            price_snapshots.c.captured_on.desc(),
+            price_snapshots.c.fetched_at.desc(),
+        )
+    ).mappings()
+
+    out: dict[str, Decimal] = {}
+    for r in rows:
+        if r["ticker"] in out:
+            continue  # ordered desc, so the first hit is the newest earlier day
+        out[r["ticker"]] = r["price"]
+    return out

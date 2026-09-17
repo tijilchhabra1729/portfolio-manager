@@ -16,6 +16,7 @@ from app.api.routes import (
     insights,
     portfolio,
     report,
+    trades,
 )
 from app.config import settings
 from app.llm.select import any_llm_configured
@@ -41,6 +42,7 @@ app.include_router(explore.router)
 app.include_router(report.router)
 app.include_router(billing.router)
 app.include_router(briefing.router)
+app.include_router(trades.router)
 
 
 @app.get("/api/config")

@@ -55,14 +55,28 @@
 
     <main data-reveal style="--i:3">
       <section id="panel-overview" role="tabpanel" class="panel">
+        <!-- The fuller P&L picture and the cash position — the numbers the hero can't
+             carry. Every % is against invested; net = realised + unrealised + options. -->
+        <section class="card">
+          <h2><span class="idx">01.1</span>Profit &amp; loss</h2>
+          <div class="metrics" id="metrics"></div>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <h2><span class="idx">01.2</span>Cash position</h2>
+            <button class="action small" id="settings-open">Edit</button>
+          </div>
+          <div class="metrics cash" id="cash"></div>
+          <div class="cash-bar" id="cash-bar" aria-hidden="true"></div>
+        </section>
         <div class="charts">
           <div class="card">
-            <h2><span class="idx">01.1</span>Sector allocation</h2>
+            <h2><span class="idx">01.3</span>Sector allocation</h2>
             <p class="hint">Share of invested amount — cost basis, not market value.</p>
             <div id="chart-allocation"></div>
           </div>
           <div class="card">
-            <h2><span class="idx">01.2</span>Profit / loss by sector</h2>
+            <h2><span class="idx">01.4</span>Profit / loss by sector</h2>
             <div class="legend">
               <span><i style="background:var(--gain)"></i>Gain</span>
               <span><i style="background:var(--loss)"></i>Loss</span>
@@ -70,11 +84,22 @@
             <div id="chart-pnl"></div>
           </div>
         </div>
+        <!-- The ledger, newest first: every buy, sell, or remove and what it did to
+             that ticker's allocation. The button records a single trade by hand. -->
+        <section class="card">
+          <div class="card-head">
+            <h2><span class="idx">01.5</span>Recent buy &amp; sell</h2>
+            <button class="action small primary" id="trade-open">Record trade</button>
+          </div>
+          <p class="hint">Tell the ledger about a trade — it recomputes cost basis, realised
+            P&amp;L and allocation. A sell that carries a price shows what it locked in.</p>
+          <div class="trades" id="trades"></div>
+        </section>
         <!-- The agent layer's landing spot. Rule agents fill it; the button asks the
              LLM analyst for a news-driven read on top. -->
         <section class="card">
           <div class="card-head">
-            <h2><span class="idx">01.3</span>Insights</h2>
+            <h2><span class="idx">01.6</span>Insights</h2>
             <button class="action small" id="analyze">Analyze now</button>
           </div>
           <div id="insights"></div>
@@ -206,6 +231,68 @@
       <button class="action" id="dlg-cancel">Cancel</button>
       <button class="action primary" id="dlg-confirm">Upload</button>
     </div>
+  </dialog>
+
+  <!-- Record one trade. Name + sector only appear for a ticker not yet held (on a buy);
+       everything else the ledger already knows. Its own ids: the upload dialog's
+       confirm/cancel handlers are hard-wired to files. -->
+  <dialog id="trade-dialog">
+    <h3>Record a trade</h3>
+    <p class="dlg-file" id="trade-market"></p>
+    <form id="trade-form" class="trade-form" autocomplete="off">
+      <div class="opts">
+        <label class="opt">
+          <input type="radio" name="trade-side" value="BUY" checked>
+          <strong>Buy</strong><small>adds to the position</small>
+        </label>
+        <label class="opt">
+          <input type="radio" name="trade-side" value="SELL">
+          <strong>Sell</strong><small>consumes the oldest lots first</small>
+        </label>
+      </div>
+      <div class="field-grid">
+        <label class="field"><span>Ticker</span>
+          <input id="trade-ticker" required placeholder="e.g. AAPL"></label>
+        <label class="field"><span>Quantity</span>
+          <input id="trade-units" type="number" min="0" step="any" required placeholder="0"></label>
+        <label class="field"><span>Price per share</span>
+          <input id="trade-price" type="number" min="0" step="any" required placeholder="0.00"></label>
+        <label class="field"><span>Date</span>
+          <input id="trade-date" type="date" required></label>
+      </div>
+      <div class="field-grid" id="trade-new" hidden>
+        <label class="field"><span>Company name <span class="dim">— new ticker</span></span>
+          <input id="trade-name" placeholder="optional; looked up if blank"></label>
+        <label class="field"><span>Sector</span>
+          <input id="trade-sector" list="sector-list" placeholder="Others"></label>
+      </div>
+      <datalist id="sector-list"></datalist>
+      <div id="trade-errors"></div>
+      <div class="dlg-foot">
+        <button class="action" type="button" id="trade-cancel">Cancel</button>
+        <button class="action primary" type="submit" id="trade-confirm">Record</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- The two numbers the ledger can't derive. -->
+  <dialog id="settings-dialog">
+    <h3>Cash position</h3>
+    <p class="dlg-file" id="settings-market"></p>
+    <form id="settings-form" class="trade-form" autocomplete="off">
+      <div class="field-grid">
+        <label class="field"><span>Total investable amount</span>
+          <input id="settings-investable" type="number" min="0" step="any" placeholder="e.g. 500000"></label>
+        <label class="field"><span>Options income</span>
+          <input id="settings-options" type="number" min="0" step="any" placeholder="0"></label>
+      </div>
+      <p class="hint">Cash position = investable − invested. Options income is added to net P&amp;L.</p>
+      <div id="settings-errors"></div>
+      <div class="dlg-foot">
+        <button class="action" type="button" id="settings-cancel">Cancel</button>
+        <button class="action primary" type="submit" id="settings-confirm">Save</button>
+      </div>
+    </form>
   </dialog>
 
   <div class="tip" id="tip" role="status"></div>

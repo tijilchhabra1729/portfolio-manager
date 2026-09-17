@@ -8,10 +8,11 @@ and the daily job all consume the same thing.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy.engine import Connection
 
-from app.core.calculations import build_dashboard, build_positions
+from app.core.calculations import build_dashboard, replay_ledger
 from app.core.models import DashboardView
 from app.core.sectors import Market
 from app.market.cache import PriceService
@@ -28,12 +29,29 @@ def build(
     force_refresh: bool = False,
 ) -> DashboardView:
     transactions = repository.get_transactions(conn, user_id, market)
-    positions = build_positions(transactions)
+    # One FIFO pass gives both what is held and what every priced sell realised.
+    replay = replay_ledger(transactions)
+    positions = replay.positions
     instruments = repository.get_instruments(conn, user_id, market)
     quotes = _prices.get_prices(
         conn, market, list(positions), force=force_refresh
     )
-    return build_dashboard(market, positions, instruments, quotes)
+    # The two user-entered numbers (investable pot, options income) and yesterday's
+    # prices for the day-change column. All optional: absent, the view simply omits them.
+    settings_row = repository.get_settings(conn, user_id, market) or {}
+    prev_closes = repository.previous_closes(
+        conn, market, list(positions), before=date.today()
+    )
+    return build_dashboard(
+        market,
+        positions,
+        instruments,
+        quotes,
+        realised=replay.realised_pnl,
+        options_income=settings_row.get("options_income") or Decimal(0),
+        investable=settings_row.get("total_investable"),
+        prev_closes=prev_closes,
+    )
 
 
 def snapshot(conn: Connection, user_id: str, market: Market) -> DashboardView:

@@ -24,6 +24,7 @@ TABLES = (
     "stock_analyses",
     "explore_usage",
     "briefings",
+    "portfolio_settings",
 )
 
 # This suite TRUNCATEs every table. Pointed at a real database it would silently destroy

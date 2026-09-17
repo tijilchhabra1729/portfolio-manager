@@ -34,6 +34,8 @@ def _stock(row: StockRow) -> dict:
         "stale_price": row.stale_price,
         "market_cap": money(row.market_cap),
         "cap_class": row.cap_class,
+        "avg_cost": money(row.avg_cost),
+        "day_change_pct": money(row.day_change_pct),
     }
 
 
@@ -67,6 +69,15 @@ def dashboard(view: DashboardView) -> dict:
             "pnl_pct": money(view.totals.pnl_pct),
             "stock_count": view.totals.stock_count,
             "sector_count": view.totals.sector_count,
+            "realised_pnl": money(view.totals.realised_pnl),
+            "realised_pnl_pct": money(view.totals.realised_pnl_pct),
+            "options_income": money(view.totals.options_income),
+            "options_income_pct": money(view.totals.options_income_pct),
+            "net_pnl": money(view.totals.net_pnl),
+            "net_pnl_pct": money(view.totals.net_pnl_pct),
+            "investable": money(view.totals.investable),
+            "cash": money(view.totals.cash),
+            "cash_pct": money(view.totals.cash_pct),
         },
         "unpriced": list(view.unpriced),
     }

@@ -76,6 +76,34 @@ class Position:
 
 
 @dataclass(frozen=True)
+class RealisedSale:
+    """One priced sell, with the gain it locked in: proceeds minus the FIFO cost basis of
+    the lots it consumed. Only sells that carry a price produce one -- a price-0 "remove"
+    has an unknown outcome and is honestly excluded rather than counted as zero gain."""
+
+    ticker: str
+    txn_date: date
+    seq: int
+    units: Decimal
+    sell_price: Decimal
+    cost_basis: Decimal
+    gain: Decimal
+
+
+@dataclass(frozen=True)
+class LedgerReplay:
+    """Everything one FIFO pass over the ledger tells us: what is still held, and what
+    each priced sell realised on the way."""
+
+    positions: dict[str, Position]
+    realised: tuple[RealisedSale, ...] = field(default_factory=tuple)
+
+    @property
+    def realised_pnl(self) -> Decimal:
+        return sum((s.gain for s in self.realised), Decimal(0))
+
+
+@dataclass(frozen=True)
 class Quote:
     ticker: str
     price: Decimal
@@ -104,6 +132,10 @@ class StockRow:
     # when an agent warns. None when the provider gave us no market cap.
     market_cap: Decimal | None = None
     cap_class: str | None = None  # "large" | "mid" | "small"
+    # Average buy price of the remaining units (cost basis / units) and the day's move
+    # against the previous close. Both None-tolerant: no prior close means no day change.
+    avg_cost: Decimal | None = None
+    day_change_pct: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -127,10 +159,24 @@ class SectorRow:
 class Totals:
     invested: Decimal
     market_value: Decimal | None
-    pnl: Decimal | None
+    pnl: Decimal | None  # unrealised: on the positions still held
     pnl_pct: Decimal | None
     stock_count: int
     sector_count: int
+    # The fuller P&L picture. Every percentage is relative to `invested`, and net P&L is
+    # realised + unrealised + options income. All defaulted, so a view built without them
+    # (tests, the exporter) is unchanged.
+    realised_pnl: Decimal = Decimal(0)
+    realised_pnl_pct: Decimal | None = None
+    options_income: Decimal = Decimal(0)
+    options_income_pct: Decimal | None = None
+    net_pnl: Decimal | None = None
+    net_pnl_pct: Decimal | None = None
+    # Cash position: what the user set aside to invest, less what is invested. cash_pct
+    # is cash / investable (the share of the pot still uninvested; negative = over-invested).
+    investable: Decimal | None = None
+    cash: Decimal | None = None
+    cash_pct: Decimal | None = None
 
 
 @dataclass(frozen=True)
